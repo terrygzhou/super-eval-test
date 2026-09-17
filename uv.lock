@@ -554,7 +554,7 @@ wheels = [
 ]
 
 [[package]]
-name = "superweb-testing"
+name = "super-eval-test"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

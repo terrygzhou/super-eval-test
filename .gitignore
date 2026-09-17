@@ -15,7 +15,7 @@ logs/
 *.pyc
 
 # Test output
-superweb_output/
+suet_output/
 .state/
 
 # Auto-generated config

@@ -1,8 +1,8 @@
-# SuperWeb Testing — Stale Code Analysis Report
+# SuperEval Test — Stale Code Analysis Report
 
 **Date:** 2026-08-10
 **Analyzer:** codegraph static analysis + import cross-reference
-**Project:** `/home/terry/projects/superweb-testing`
+**Project:** `/home/terry/projects/super-eval-test`
 **Python files scanned:** 14 (11 in `src/`, 2 in `tests/`, 1 root script)
 **Total source lines:** ~3,300
 
@@ -118,7 +118,7 @@
 **What it does:**
 - `CRMTestRunner` class that directly orchestrates all 4 pipeline phases
 - Creates source analyzer, data generator, test runner, log monitor, and report
-- Supports `crm` command in CLI (`superweb crm run`)
+- Supports `crm` command in CLI (`suet crm run`)
 - Has its own OpenHands client integration
 
 **Impact:** This module duplicates the pipeline's orchestration logic. The main `Pipeline` class in `pipeline.py` already does:

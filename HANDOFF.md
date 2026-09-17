@@ -1,6 +1,6 @@
 # Session Handoff — 2026-07-31 12:00 UTC
 
-**Project**: `superweb_testing` | `/home/terry/workspace/projects/superweb_testing`
+**Project**: `super_eval_test` | `/home/terry/projects/super-eval-test`
 **Branch**: `main`
 **Last commit**: `9b755a0 auto: handoff`
 

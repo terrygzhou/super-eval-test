@@ -1,4 +1,4 @@
-"""CLI entry point for SuperWeb Testing."""
+"""CLI entry point for SuperEval Test."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from .constants import DEFAULT_LLM_BASE_URL, DEFAULT_LLM_MODEL
 
 console = Console()
 app = typer.Typer(
-    name="superweb",
+    name="suet",
     help="AI-driven E2E web app testing pipeline",
     add_completion=True,
 )
@@ -45,7 +45,7 @@ def run(
         help="Local path or git URL of the webapp source code",
     ),
     output: str = typer.Option(
-        "./superweb_output", "--output", "-o",
+        "./suet_output", "--output", "-o",
         help="Output/report directory for all artifacts",
     ),
     config: Path = typer.Option(
@@ -138,7 +138,7 @@ def analyze(
         help="Local path or git URL of the webapp source code",
     ),
     output: str = typer.Option(
-        "./superweb_output", "--output", "-o",
+        "./suet_output", "--output", "-o",
         help="Output directory",
     ),
     config: Path = typer.Option(
@@ -179,7 +179,7 @@ def generate(
         help="Path to schemas.json",
     ),
     output: str = typer.Option(
-        "./superweb_output", "--output", "-o",
+        "./suet_output", "--output", "-o",
         help="Output directory for test data",
     ),
     llm_url: str = typer.Option(

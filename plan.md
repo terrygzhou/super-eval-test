@@ -1,12 +1,12 @@
 # OpenHands Integration Plan (Option 2: Docker + REST API)
 
 ## Goal
-Integrate OpenHands as an external Agent Server via REST API. `superweb-testing` will delegate source comprehension, data generation, and dynamic test creation to OpenHands, while retaining its deterministic Playwright execution and log correlation. This keeps the package lean, decoupled, and CI/CD friendly.
+Integrate OpenHands as an external Agent Server via REST API. `super-eval-test` will delegate source comprehension, data generation, and dynamic test creation to OpenHands, while retaining its deterministic Playwright execution and log correlation. This keeps the package lean, decoupled, and CI/CD friendly.
 
 ## Architecture
 ```mermaid
 sequenceDiagram
-    participant CLI as superweb-testing (CLI)
+    participant CLI as super-eval-test (CLI)
     participant OH as OpenHands Agent Server (Docker)
     participant LLM as vLLM (Qwen3.6-27B)
     participant Web as Target Webapp
@@ -65,19 +65,19 @@ sequenceDiagram
 **Goal:** Expose OpenHands controls and execution modes via Typer.
 **Files:** `src/cli.py`
 
-- [ ] Add `--mode agent|scripted` flag to `superweb run`.
-- [ ] Add `superweb openhands` group:
+- [ ] Add `--mode agent|scripted` flag to `suet run`.
+- [ ] Add `suet openhands` group:
   - `start`: Start the OpenHands container (`compose up`).
   - `stop`: Stop the container (`compose down`).
   - `status`: `docker compose ps`.
-- [ ] Ensure `superweb run --mode agent` automatically starts the container if not running.
+- [ ] Ensure `suet run --mode agent` automatically starts the container if not running.
 
 ## Task 5: Validation & Testing
 **Goal:** Verify end-to-end agent-driven workflow.
 **Files:** `tests/test_openhands_client.py`, `README.md`
 
 - [ ] Unit tests for `OpenHandsClient` (mock HTTP endpoints).
-- [ ] End-to-end test: Run `superweb run --source <loop_factory> --target http://localhost:8081 --mode agent`.
+- [ ] End-to-end test: Run `suet run --source <loop_factory> --target http://localhost:8081 --mode agent`.
 - [ ] Update `README.md`: Document Docker setup and agent mode usage.
 
 ---

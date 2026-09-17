@@ -1,5 +1,5 @@
 [project]
-name = "superweb-testing"
+name = "super-eval-test"
 version = "0.1.0"
 description = "AI-driven web app E2E testing: source-aware data generation, browser automation, server log correlation"
 requires-python = ">=3.12"
@@ -17,7 +17,7 @@ dependencies = [
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]
 
 [project.scripts]
-superweb = "src.cli:main"
+suet = "src.cli:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]

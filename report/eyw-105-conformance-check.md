@@ -25,13 +25,13 @@
 ### 1.3 CLI Commands
 | Command | README | Code (`cli.py`) | Status |
 |---|---|---|---|
-| `superweb run --target --source` | Full pipeline | Lines 37-124 | ✅ |
-| `superweb run --source --dry-run` | Analysis only | Lines 67-70, 112-116 | ✅ |
-| `superweb analyze --source` | Phase 1 only | Lines 133-171 | ✅ |
-| `superweb generate --schemas` | Phase 2 only | Lines 174-226 | ✅ |
-| `superweb openhands-start` | Start container | Lines 232-236 | ⚠️ (see §2.1) |
-| `superweb openhands-stop` | Stop container | Lines 239-243 | ⚠️ (see §2.1) |
-| `superweb openhands-status` | Check status | Lines 246-256 | ⚠️ (see §2.1) |
+| `suet run --target --source` | Full pipeline | Lines 37-124 | ✅ |
+| `suet run --source --dry-run` | Analysis only | Lines 67-70, 112-116 | ✅ |
+| `suet analyze --source` | Phase 1 only | Lines 133-171 | ✅ |
+| `suet generate --schemas` | Phase 2 only | Lines 174-226 | ✅ |
+| `suet openhands-start` | Start container | Lines 232-236 | ⚠️ (see §2.1) |
+| `suet openhands-stop` | Stop container | Lines 239-243 | ⚠️ (see §2.1) |
+| `suet openhands-status` | Check status | Lines 246-256 | ⚠️ (see §2.1) |
 
 ### 1.4 Architecture Diagram
 Mermaid diagram accurately reflects:
@@ -161,7 +161,7 @@ Severity: **Low** — `pip install -e .` still works with setuptools.
 ```bash
 python3 -m src.cli run --target ...
 ```
-The entry point is `superweb` (registered in `pyproject.toml:20`). `python3 -m src.cli` works but is undocumented as the primary way.
+The entry point is `suet` (registered in `pyproject.toml:20`). `python3 -m src.cli` works but is undocumented as the primary way.
 
 Severity: **Low** — functional but inconsistent.
 
@@ -258,7 +258,7 @@ Updated `_fallback_value()` to accept a `choices` parameter. When generating fal
 - §2.4 — Undocumented `pipeline.artifacts_dir` in config.example.yaml
 - §2.5 — Undocumented `llm.api_key` in config.example.yaml
 - §2.7 — README uses `pip install` not `uv`
-- §2.8 — README uses `python3 -m src.cli` not `superweb`
+- §2.8 — README uses `python3 -m src.cli` not `suet`
 
 ### Overall Assessment
 The codebase is **92% conformant** with README.md. The 4-phase pipeline, dual execution modes, CLI commands, output structure, and test data generation are all correctly implemented. The main conformance gap is the OpenHands CLI commands (§2.1) which use the wrong compose file. The test data generation capability is comprehensive — covering 9 field types with 3 variation strategies each (LLM + fallback).

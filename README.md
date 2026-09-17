@@ -1,4 +1,4 @@
-# SuperWeb Testing
+# SuperEval Test
 
 **AI-driven E2E web application testing pipeline.** Analyzes source code, generates realistic test data, runs browser automation, and correlates results with server logs.
 
@@ -19,26 +19,26 @@
 pip install -e .
 
 # Run full pipeline
-superweb run --target http://localhost:8080 --source /path/to/source
+suet run --target http://localhost:8080 --source /path/to/source
 
 # Dry run (analysis only)
-superweb run --source /path/to/source --dry-run
+suet run --source /path/to/source --dry-run
 
 # Source analysis only
-superweb analyze --source /path/to/source
+suet analyze --source /path/to/source
 
 # Generate test data from existing schemas
-superweb generate --schemas data/schemas.json
+suet generate --schemas data/schemas.json
 ```
 
 ## CLI Reference
 
 ```bash
 # Main pipeline
-superweb run \
+suet run \
   --target http://localhost:8080 \
   --source /path/to/source \
-  --output ./superweb_output \
+  --output ./suet_output \
   --llm-url http://localhost:8080 \
   --llm-model gpt-4 \
   --variations 3 \
@@ -46,9 +46,9 @@ superweb run \
   --agent-timeout 600
 
 # OpenHands container management
-superweb openhands-start   # Start container on port 3005
-superweb openhands-stop    # Stop container
-superweb openhands-status  # Check status
+suet openhands-start   # Start container on port 3005
+suet openhands-stop    # Stop container
+suet openhands-status  # Check status
 ```
 
 ## Architecture
@@ -84,7 +84,7 @@ graph LR
         LOGS[/"Server Logs\n(Docker/file/journalctl)"/]
     end
 
-    USER -->|"superweb run"| CLI_CLI
+    USER -->|"suet run"| CLI_CLI
     CLI_CLI -->|"delegates"| PIPE
 
     PIPE -->|"mode=scripted"| P1
@@ -123,7 +123,7 @@ Delegates to OpenHands Agent Server via 3 sequential conversations:
 ## Output
 
 ```
-superweb_output/
+suet_output/
 ├── data/
 │   ├── schemas.json          # Extracted form schemas
 │   ├── test_data.json        # Generated test data
@@ -171,7 +171,7 @@ curl -s http://localhost:3005/health
 #
 # 4. Run the pipeline in agent mode:
 python3 -m src.cli run --target http://host.docker.internal:8080 \
-  --source /path/to/source --output ./superweb_test \
+  --source /path/to/source --output ./suet_test \
   --mode agent --agent-timeout 3600
 #
 # 5. Stop when done (optional — pipeline auto-stops):
