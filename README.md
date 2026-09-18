@@ -80,31 +80,31 @@ superApp openhands-status  # Check status
 graph LR
     subgraph CLI["CLI Layer"]
         USER[("User")]
-        CLI_CLI["cli.py\nTyper CLI"]
+        CLI_CLI["cli.py<br/>Typer CLI"]
     end
 
     subgraph CORE["Core Pipeline"]
-        PIPE["pipeline.py\nOrchestrator\n(scripted | agent)"]
+        PIPE["pipeline.py<br/>Orchestrator<br/>(scripted | agent)"]
     end
 
     subgraph SCRIPTED["Scripted Mode"]
-        P1["P1: source_analyzer.py\nForm/Route Extraction"]
-        P2["P2: data_generator.py\nLLM Test Data Gen"]
-        P3["P3: test_runner.py\nPlaywright E2E"]
-        P4["P4: log_monitor.py\nLog Correlation"]
+        P1["P1: source_analyzer.py<br/>Form/Route Extraction"]
+        P2["P2: data_generator.py<br/>LLM Test Data Gen"]
+        P3["P3: test_runner.py<br/>Playwright E2E"]
+        P4["P4: log_monitor.py<br/>Log Correlation"]
     end
 
     subgraph AGENT["Agent Mode"]
-        OH_CLI["openhands_client.py\nREST Client"]
-        OH_SRV["OpenHands Agent Server\n(Docker :3005)"]
-        CONV["3 Conversations\n1.Analyze → schemas\n2.Test → results\n3.Report → JSON/MD"]
+        OH_CLI["openhands_client.py<br/>REST Client"]
+        OH_SRV["OpenHands Agent Server<br/>(Docker :3005)"]
+        CONV["3 Conversations<br/>1. Analyze → schemas<br/>2. Test → results<br/>3. Report → JSON/MD"]
     end
 
     subgraph EXT["External Systems"]
-        LLM["LLM Endpoint\n(vLLM / OpenAI)"]
-        BROWSER["Playwright\nChromium"]
-        TARGET[/"Target Web App"/]
-        LOGS[/"Server Logs\n(Docker/file/journalctl)"]
+        LLM["LLM Endpoint<br/>(vLLM / OpenAI)"]
+        BROWSER["Playwright<br/>Chromium"]
+        TARGET["Target Web App"]
+        LOGS["Server Logs<br/>(Docker / file / journalctl)"]
     end
 
     USER -->|"superApp run"| CLI_CLI
