@@ -133,10 +133,10 @@ which calls `_load_config` internally (lines 47, 73-80). There is no
 `from_config` method.
 
 ### 3.3 No async in test infrastructure
-**Current status:** **STILL RELEVANT** — `pyproject.toml` still lists
-`pytest-asyncio>=0.24` as a dev dependency (line 17) but there is no test
-suite anywhere in the repo to exercise it (confirmed: no `tests/`, no
-`test_*.py`). This is a declared-but-unused dev dependency.
+**Current status:** **RESOLVED** — a test suite now exists at
+`tests/test_fixes.py` (10 tests, `pytest-asyncio` active in strict mode).
+`pytest tests/test_fixes.py` passes. `pytest-asyncio` is no longer
+declared-but-unused.
 
 ---
 
@@ -151,14 +151,16 @@ project name). The current default output directory is `./superApp_output`
 (`cli.py:48`), so the gitignore pattern no longer matches the real output
 dir, and the real output dir is **not** gitignored.
 
-**Recommendation:** Replace `suet_output/` with `superApp_output/` in
-`.gitignore`.
+**Status:** **RESOLVED** — `.gitignore` line 18 is now
+`superApp_output/`; `git check-ignore superApp_output/` returns 0.
+Covered by `tests/test_fixes.py::TestGitignoreOutputDir` (3 tests).
 
 ### 4.2 Stale `superApp_output` directory is untracked
 The default output dir `./superApp_output` is not in `.gitignore`, so any
 run will leave untracked files in the working tree.
 
-**Recommendation:** Add `superApp_output/` to `.gitignore`.
+**Status:** **RESOLVED** — same fix as §4.1; `superApp_output/` is now in
+`.gitignore` (line 18) and confirmed ignored by `git check-ignore`.
 
 ### 4.3 `config.yaml` checked into the working tree
 A real `config.yaml` (839 bytes) sits in the repo root. AGENTS.md states
@@ -177,8 +179,14 @@ when none is configured (lines 425-427 in `run()` and lines 477-479 in
 `phase1_analyze`). This is an implicit coupling to the external Loop
 Engineering Factory workspace that the original report never mentions.
 
-**Recommendation:** Document this default in README, or make it a required
-CLI/config value to avoid silent coupling.
+**Status:** **RESOLVED** — the hardcoded default was removed. Both
+`run()` (line 426) and `phase1_analyze()` (line 478) now require an
+explicit source root and raise `SystemExit(1)` with a clear error
+message if missing. `grep loop_factory src/pipeline.py` returns 0
+matches. `config.example.yaml` `source.root` was updated to a generic
+`/path/to/your/webapp/source` placeholder. Covered by
+`tests/test_fixes.py::TestNoHardcodedSourceDefault` (4 tests) and
+`tests/test_fixes.py::TestConfigExampleSourceRoot` (1 test).
 
 ---
 
@@ -191,6 +199,6 @@ CLI/config value to avoid silent coupling.
 | P3 | ~~Remove unused constants~~ | `src/constants.py` | **RESOLVED** — now 3 constants |
 | P4 | ~~Remove unused regex patterns~~ | `src/source_analyzer.py` | **RESOLVED** — replaced with instance-level globs |
 | P5 | ~~Relocate or remove root script~~ | `test_openhands_connection.py` | **RESOLVED** — file removed |
-| P6 (new) | Replace stale `suet_output/` with `superApp_output/` in `.gitignore` | `.gitignore` | Open |
-| P7 (new) | Add `superApp_output/` to `.gitignore` | `.gitignore` | Open |
-| P8 (new) | Document LEF-specific default `source.root` in README or make it required | `pipeline.py`, `README.md` | Open |
+| P6 (new) | Replace stale `suet_output/` with `superApp_output/` in `.gitignore` | `.gitignore` | **RESOLVED** — line 18 now `superApp_output/`; verified by `tests/test_fixes.py::TestGitignoreOutputDir` |
+| P7 (new) | Add `superApp_output/` to `.gitignore` | `.gitignore` | **RESOLVED** — same fix as P6 |
+| P8 (new) | Remove hardcoded LEF `source.root` default; make it required | `pipeline.py`, `config.example.yaml` | **RESOLVED** — both `run()` and `phase1_analyze()` now raise `SystemExit` when source root is missing; `config.example.yaml` uses a generic placeholder; verified by `tests/test_fixes.py::TestNoHardcodedSourceDefault` + `TestConfigExampleSourceRoot` |

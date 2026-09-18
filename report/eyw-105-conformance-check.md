@@ -304,6 +304,15 @@ key" notes. The test data generation capability remains comprehensive —
 covering 9 field types with 3 variation strategies each (LLM + fallback),
 and the LLM + code-based verdict pattern is unchanged.
 
+> **Update (post-fix):** The CLI report-path defect (§4.2) and the
+> `superApp_output` gitignore defect (§4.4/§4.5) have been **fixed and
+> verified** by the test suite in `tests/test_fixes.py` (10 tests, all
+> passing). `cli.py:119` now prints `{output}/logs/correlation_report.json`
+> and `.gitignore` line 18 is `superApp_output/`. The remaining open items
+> are: §4.1 (config.example.yaml omits 2 default route patterns), §4.3
+> (duplicate `compose.yaml` resolution), §3.4 (fallback `file`
+> placeholders), and the four Low "undocumented config key" notes.
+
 ---
 
 ## 4. New Issues Found During Re-Verification (2026-09-18)
@@ -330,8 +339,10 @@ But the actual path written by `pipeline.py:619` is
 `{output}/logs/correlation_report.json` (under `logs/`, not `report/`).
 The CLI success message is wrong.
 
-**Recommendation:** Fix the CLI message to print
-`{output}/logs/correlation_report.json`.
+**Status:** **RESOLVED** — `cli.py:119` now prints
+`{output}/logs/correlation_report.json`, matching the path
+`pipeline.py` actually writes. Covered by
+`tests/test_fixes.py::TestCliReportPathMessage` (2 tests).
 
 ### 4.3 `pipeline.py` and `cli.py` both resolve `compose.yaml`
 `pipeline.py:114` and `cli.py:233-234` each independently resolve
@@ -347,8 +358,9 @@ The default output dir is `./superApp_output` (`cli.py:48`), but
 `.gitignore` still references the old `suet_output/` name (line 15).
 Run outputs are therefore left untracked in the working tree.
 
-**Recommendation:** Replace `suet_output/` with `superApp_output/` in
-`.gitignore` (see `report/stale_code_analysis.md` §4.1-4.2).
+**Status:** **RESOLVED** — `.gitignore` line 18 now reads
+`superApp_output/` (replacing the stale `suet_output/`). Verified by
+`git check-ignore` and `tests/test_fixes.py::TestGitignoreOutputDir`.
 
 ### 4.5 `.gitignore` still references `suet_output/` (stale)
 `.gitignore:15` contains `suet_output/` — a leftover from the original
@@ -356,5 +368,5 @@ project name. The current output dir is `superApp_output` (see §4.4).
 This is the same issue as §4.4 but tracked as a separate `.gitignore`
 finding.
 
-**Recommendation:** Remove the `suet_output/` line and add
-`superApp_output/`.
+**Status:** **RESOLVED** — same fix as §4.4; `suet_output/` removed and
+`superApp_output/` added to `.gitignore`.
