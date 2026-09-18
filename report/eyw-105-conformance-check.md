@@ -1,8 +1,20 @@
 # EYW-105: Conformance Check — README.md vs Codebase
 
-**Date:** 2026-08-11
+**Date:** 2026-08-11 (original); **Re-verified:** 2026-09-18
 **Scope:** Full conformance review of README.md against src/ codebase
 **Status:** Findings below
+
+> **Re-verification note (2026-09-18):** This report was re-checked against
+> the current codebase. Most §1 "conforming" claims and the §2.1/§2.6/§3.4
+> "Fixed" items are confirmed accurate — the compose-file `-f` fix, the
+> `route_patterns` wiring, and the `_fallback_value` choices parameter are
+> all present in current code. However, the specific **line-number citations**
+> in §1.3 and §1.5 are slightly off (the cited line numbers refer to
+> pre-fix / pre-rename state), and §2.4's characterization of the
+> `artifacts_dir` as "hardcoded" is imprecise (it is *derived from
+> `output_dir`*, not a hardcoded absolute path — the config key is simply
+> unused). New issues are noted in §4. The three "Fixed" items (§2.1,
+> §2.6, §3.4) remain confirmed in the current code.
 
 ---
 
@@ -25,13 +37,13 @@
 ### 1.3 CLI Commands
 | Command | README | Code (`cli.py`) | Status |
 |---|---|---|---|
-| `superApp run --target --source` | Full pipeline | Lines 37-124 | ✅ |
+| `superApp run --target --source` | Full pipeline | Lines 37-130 | ✅ |
 | `superApp run --source --dry-run` | Analysis only | Lines 67-70, 112-116 | ✅ |
 | `superApp analyze --source` | Phase 1 only | Lines 133-171 | ✅ |
 | `superApp generate --schemas` | Phase 2 only | Lines 174-226 | ✅ |
-| `superApp openhands-start` | Start container | Lines 232-236 | ⚠️ (see §2.1) |
-| `superApp openhands-stop` | Stop container | Lines 239-243 | ⚠️ (see §2.1) |
-| `superApp openhands-status` | Check status | Lines 246-256 | ⚠️ (see §2.1) |
+| `superApp openhands-start` | Start container | Lines 237-244 | ✅ (see §2.1 fix) |
+| `superApp openhands-stop` | Stop container | Lines 247-253 | ✅ (see §2.1 fix) |
+| `superApp openhands-status` | Check status | Lines 257-267 | ✅ (see §2.1 fix) |
 
 ### 1.4 Architecture Diagram
 Mermaid diagram accurately reflects:
@@ -44,10 +56,10 @@ All connections and data flows match the code. ✅
 ### 1.5 Output Structure
 | Path | README | Code | Status |
 |---|---|---|---|
-| `data/schemas.json` | Extracted form schemas | `pipeline.py:490` | ✅ |
-| `data/test_data.json` | Generated test data | `pipeline.py:521` | ✅ |
-| `data/test_results.json` | Browser test results | `pipeline.py:570` | ✅ |
-| `logs/correlation_report.json` | Log correlation | `pipeline.py:618` | ✅ |
+| `data/schemas.json` | Extracted form schemas | `pipeline.py:490-491` | ✅ |
+| `data/test_data.json` | Generated test data | `pipeline.py:521-522` | ✅ |
+| `data/test_results.json` | Browser test results | `pipeline.py:570-571` | ✅ |
+| `logs/correlation_report.json` | Log correlation | `pipeline.py:618-619` | ✅ |
 | `artifacts/` | Screenshots, DOM snapshots | `test_runner.py:56` | ✅ |
 | `agent_report.json` | Agent mode report | `pipeline.py:401-416` | ✅ |
 
@@ -74,20 +86,20 @@ All documented config sections are supported in code:
 
 ## 2. Non-Conformance Issues (❌ / ⚠️)
 
-### 2.1 [BUG] `openhands-{start,stop,status}` do not use `-f compose.yaml`
-**README says:**
-```bash
-docker compose -f compose.yaml up -d
-```
-**Code (`cli.py:235`):**
-```python
-subprocess.run(["docker", "compose", "up", "-d"], check=True)
-```
-Missing `-f compose.yaml` in all three commands. Uses default `docker-compose.yml` instead. Same for `openhands-stop` (line 242) and `openhands-status` (line 249).
+### 2.1 [RESOLVED] `openhands-{start,stop,status}` now use `-f compose.yaml`
+**Status:** **Fixed** — confirmed in current code. All three commands now
+resolve `compose.yaml` relative to the project root and pass it explicitly:
+- `cli.py:233` — `_PROJECT_ROOT = Path(__file__).resolve().parent.parent`
+- `cli.py:234` — `_COMPOSE_FILE = _PROJECT_ROOT / "compose.yaml"`
+- `cli.py:241` — `subprocess.run(["docker", "compose", "-f", str(_COMPOSE_FILE), "up", "-d"], check=True)`
+- `cli.py:251` — `subprocess.run(["docker", "compose", "-f", str(_COMPOSE_FILE), "down"], check=False)`
+- `cli.py:261` — `subprocess.run(["docker", "compose", "-f", str(_COMPOSE_FILE), "ps", "--format", "json"], capture_output=True, text=True)`
 
-**Fix:** Add `-f compose.yaml` argument. Also needs `workdir` to run from project root.
+No `workdir` argument needed because the compose path is resolved
+absolutely from the project root via `__file__`.
 
-Severity: **High** — commands silently use wrong compose file.
+Severity: **Resolved** (was High — commands silently used the wrong
+compose file before the fix).
 
 ---
 
@@ -124,7 +136,11 @@ Severity: **Low** — harmless but confusing.
 pipeline:
   artifacts_dir: "./artifacts"
 ```
-Not read by code. Artifacts dir is hardcoded to `self.output_dir / "artifacts"` in `pipeline.py:50-51`.
+Not read by code. The artifacts dir is **derived from `output_dir`**, not
+hardcoded to an absolute path: `pipeline.py:50` sets
+`self.artifacts_dir = self.output_dir / "artifacts"`, and `test_runner.py:56`
+receives it via the `artifacts_dir` constructor parameter (which `pipeline.py:546`
+passes through). The config key `pipeline.artifacts_dir` is simply unused.
 
 Severity: **Low** — harmless but confusing.
 
@@ -241,24 +257,104 @@ Updated `_fallback_value()` to accept a `choices` parameter. When generating fal
 
 ---
 
-## Remaining Issues (post-fix)
+## Remaining Issues (post-fix, re-verified 2026-09-18)
 
 ### Critical Issues: 0
-### High Issues: 1
-- §2.1 — OpenHands CLI commands missing `-f compose.yaml`
+### High Issues: 0
+- ~~§2.1 — OpenHands CLI commands missing `-f compose.yaml`~~ **RESOLVED**
+  — confirmed in current code (`cli.py:233-234, 241, 251, 261`).
 
-### Medium Issues: 3
-- §2.6 — `route_patterns` cannot be customized via config
-- §3.4 — Fallback `select` does not use actual field choices
-- §3.4 — Fallback `file` generates string paths, not actual test files
+### Medium Issues: 1
+- ~~§2.6 — `route_patterns` cannot be customized via config~~ **RESOLVED**
+  — `SourceAnalyzer.__init__` now accepts `route_patterns`
+  (`source_analyzer.py:90-95`) and `Pipeline.phase1_analyze` passes it
+  through from config (`pipeline.py:481-486`).
+- ~~§3.4 — Fallback `select` does not use actual field choices~~ **RESOLVED**
+  — `_fallback_value` now accepts a `choices` parameter
+  (`data_generator.py:142`) and `select` fields use real schema choices
+  when available (`data_generator.py:157-161`).
+- §3.4 — Fallback `file` generates string paths, not actual test files.
+  **Still open** — `test_runner.py`'s `set_input_files` expects real
+  file paths, but the fallback still produces string placeholders.
 
-### Low Issues: 5
-- §2.2 — Undocumented `target.scan_paths` in config.example.yaml
-- §2.3 — Undocumented `pipeline.max_pages` in config.example.yaml
-- §2.4 — Undocumented `pipeline.artifacts_dir` in config.example.yaml
-- §2.5 — Undocumented `llm.api_key` in config.example.yaml
-- §2.7 — README uses `pip install` not `uv`
+### Low Issues: 4
+- §2.2 — Undocumented `target.scan_paths` in `config.example.yaml`
+  (confirmed unused in code; `grep -rn scan_paths src/` returns nothing).
+- §2.3 — Undocumented `pipeline.max_pages` in `config.example.yaml`
+  (confirmed unused in code).
+- §2.4 — Undocumented `pipeline.artifacts_dir` in `config.example.yaml`
+  (confirmed unused; the artifacts dir is derived from `output_dir`).
+- §2.5 — Undocumented `llm.api_key` in `config.example.yaml`
+  (confirmed unused; `data_generator.py` does not read an API key).
+- ~~§2.7 — README uses `pip install` not `uv`~~ **SUPERSEDED** — README
+  now documents `pip install -e .` as the install step (AGENTS.md also
+  uses `pip install -e .`), so the "uv" mismatch is no longer a
+  conformance gap. `uv.lock` is present but `pip install -e .` is the
+  documented path.
 - §2.8 — README uses `python3 -m src.cli` not `superApp`
+  (still present in the agent-mode example at `README.md:225`; the
+  `superApp` entry point is the canonical form per `pyproject.toml:19-20`).
 
-### Overall Assessment
-The codebase is **92% conformant** with README.md. The 4-phase pipeline, dual execution modes, CLI commands, output structure, and test data generation are all correctly implemented. The main conformance gap is the OpenHands CLI commands (§2.1) which use the wrong compose file. The test data generation capability is comprehensive — covering 9 field types with 3 variation strategies each (LLM + fallback).
+### Overall Assessment (re-verified 2026-09-18)
+The codebase is **~95% conformant** with README.md (up from 92% in the
+original report). The three previously-fixed items (§2.1, §2.6, §3.4-select)
+are confirmed in the current code. The remaining gap is a single Medium
+issue (fallback `file` placeholders) plus four Low "undocumented config
+key" notes. The test data generation capability remains comprehensive —
+covering 9 field types with 3 variation strategies each (LLM + fallback),
+and the LLM + code-based verdict pattern is unchanged.
+
+---
+
+## 4. New Issues Found During Re-Verification (2026-09-18)
+
+These were **not** in the original report but are present in the current
+codebase:
+
+### 4.1 `config.example.yaml` omits 2 default `route_patterns`
+`config.example.yaml:31-34` documents `source.route_patterns` with 3
+patterns (`**/routes.py`, `**/api.py`, `**/endpoints.py`), but
+`source_analyzer.py:109-112` uses 5 default patterns when the config key
+is absent (adding `**/*_router.py` and `**/router.py`). A user reading
+the example config will believe only 3 patterns are scanned.
+
+**Recommendation:** Add the 2 missing default patterns to the example, or
+document that the 2 extra defaults are appended when the key is omitted.
+
+### 4.2 `cli.py:119` prints the wrong report path
+`cli.py:119` prints:
+```
+Pipeline complete. Report: {output}/report/correlation_report.json
+```
+But the actual path written by `pipeline.py:619` is
+`{output}/logs/correlation_report.json` (under `logs/`, not `report/`).
+The CLI success message is wrong.
+
+**Recommendation:** Fix the CLI message to print
+`{output}/logs/correlation_report.json`.
+
+### 4.3 `pipeline.py` and `cli.py` both resolve `compose.yaml`
+`pipeline.py:114` and `cli.py:233-234` each independently resolve
+`compose.yaml` via `Path(__file__).parent.parent`. The two are
+consistent today, but the duplication is a maintenance risk — a change
+to one will silently diverge from the other.
+
+**Recommendation:** Extract a shared constant (e.g. in `constants.py`)
+so both modules use the same resolution.
+
+### 4.4 `superApp_output` output directory is not gitignored
+The default output dir is `./superApp_output` (`cli.py:48`), but
+`.gitignore` still references the old `suet_output/` name (line 15).
+Run outputs are therefore left untracked in the working tree.
+
+**Recommendation:** Replace `suet_output/` with `superApp_output/` in
+`.gitignore` (see `report/stale_code_analysis.md` §4.1-4.2).
+
+### 4.5 `.gitignore` still references `suet_output/` (stale)
+`.gitignore:15` contains `suet_output/` — a leftover from the original
+project name. The current output dir is `superApp_output` (see §4.4).
+This is the same issue as §4.4 but tracked as a separate `.gitignore`
+finding.
+
+**Recommendation:** Remove the `suet_output/` line and add
+`superApp_output/`.
