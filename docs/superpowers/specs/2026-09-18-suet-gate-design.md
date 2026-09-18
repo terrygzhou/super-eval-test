@@ -1,4 +1,4 @@
-# Design: `suet gate` — Regression Quality Gating + Task Suite + Cost Tracking
+# Design: `superApp gate` — Regression Quality Gating + Task Suite + Cost Tracking
 
 Date: 2026-09-18
 Status: draft
@@ -19,22 +19,22 @@ Add a statistical regression gate to the existing deterministic pipeline:
   metric, not a post-hoc add-on.
 - The command emits a **CI contract**: exit codes + machine-readable reports.
 
-Deferred (interface kept open, not implemented): `suet ab` (model/prompt
+Deferred (interface kept open, not implemented): `superApp ab` (model/prompt
 A/B — same engine, pairwise CI between two candidates). Out of scope:
 production/online monitoring.
 
 ## 2. CLI
 
 ```bash
-suet gate \
+superApp gate \
   --target http://localhost:8081 \
   --source /path/to/source \
   --suite tasks/ \
   --n 7 \
-  --baseline ./suet_output/baseline.json \
+  --baseline ./superApp_output/baseline.json \
   [--fail-on-regression] \
   [--cost-gate] \
-  [--output ./suet_output]
+  [--output ./superApp_output]
 ```
 
 - `--suite`: directory of task YAML files (required; the canonical input
@@ -109,7 +109,7 @@ Rules:
   verdict: any task `regressed` → gate FAIL.
 - `load_baseline(path)` / `save_baseline(report, path)` — baseline is the
   previous `gate_report.json` (success rates + CIs + cost metrics), stored
-  under `suet_output/` and optionally checked in for the canonical suite.
+  under `superApp_output/` and optionally checked in for the canonical suite.
 
 ### 4.3 `src/cost_tracker.py` (new)
 
@@ -149,12 +149,12 @@ Rules:
 - `tasks/` — initial suite: 3 tasks against the loop_factory app
   (happy path, boundary, special-chars — mirroring the existing
   `data_generator` variation scheme, but fixed).
-- `run_test.sh` — optional `SUET_MODE=gate` + `SUET_N` env passthrough so
+- `run_test.sh` — optional `SUPERAPP_MODE=gate` + `SUPERAPP_N` env passthrough so
   the existing one-script entrypoint works in CI without new tooling.
 
 ## 5. What is deliberately NOT in scope
 
-- `suet ab` — the design keeps the interface open (grader + trial engine is
+- `superApp ab` — the design keeps the interface open (grader + trial engine is
   reusable; a future A/B adds a candidate abstraction: LLM endpoint/model
   override + pairwise CI). Stub only; no implementation.
 - LLM-judge calibration (human-labeled slice) — noted as follow-up; the
@@ -185,5 +185,5 @@ Rules:
 | `src/pipeline.py` | Add `run_gate()` + suite loader; no changes to existing phases |
 | `src/cli.py` | Add `gate` command |
 | `tasks/*.yaml` | New — curated suite (3 tasks initially) |
-| `run_test.sh` | `SUET_MODE=gate` passthrough (optional) |
+| `run_test.sh` | `SUPERAPP_MODE=gate` passthrough (optional) |
 | `report/agentic-eval-opportunity.md` | Done — assessment |

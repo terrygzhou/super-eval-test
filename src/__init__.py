@@ -1,3 +1,3 @@
-"""SuperEval Test - AI-driven E2E web testing pipeline."""
+"""SuperApp Test - AI-driven E2E web testing pipeline."""
 
 __version__ = "0.1.0"

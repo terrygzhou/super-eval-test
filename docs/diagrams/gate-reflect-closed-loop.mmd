@@ -15,9 +15,9 @@ flowchart TB
         VERIFY --> SHIP["SHIP"] --> REFLECT["REFLECT\nFeedbackAggregator\n+ diff_engine\n→ config diff"]
     end
 
-    SHIP -->|"product shipped\nto output/"| GATE["suet gate run\n--target <shipped>\n--suite tasks/\n--n 7\n--baseline baseline.json"]
+    SHIP -->|"product shipped\nto output/"| GATE["superApp gate run\n--target <shipped>\n--suite tasks/\n--n 7\n--baseline baseline.json"]
 
-    subgraph GATEPHASE["Gate evaluation (suet gate)"]
+    subgraph GATEPHASE["Gate evaluation (superApp gate)"]
         direction LR
         TRIALS["N trials per task\n(1:N:N span fan-out)"]
         GRADE["Grade\nScripted + LLM-judge\n(judge: independent)"]

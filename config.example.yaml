@@ -1,4 +1,4 @@
-# SuperEval Test Configuration
+# SuperApp Test Configuration
 
 # LLM endpoint for test data generation
 llm:

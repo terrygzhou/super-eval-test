@@ -17,7 +17,7 @@ dependencies = [
 dev = ["pytest>=8.3", "pytest-asyncio>=0.24"]
 
 [project.scripts]
-suet = "src.cli:main"
+superApp = "src.cli:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]

@@ -65,19 +65,19 @@ sequenceDiagram
 **Goal:** Expose OpenHands controls and execution modes via Typer.
 **Files:** `src/cli.py`
 
-- [ ] Add `--mode agent|scripted` flag to `suet run`.
-- [ ] Add `suet openhands` group:
+- [ ] Add `--mode agent|scripted` flag to `superApp run`.
+- [ ] Add `superApp openhands` group:
   - `start`: Start the OpenHands container (`compose up`).
   - `stop`: Stop the container (`compose down`).
   - `status`: `docker compose ps`.
-- [ ] Ensure `suet run --mode agent` automatically starts the container if not running.
+- [ ] Ensure `superApp run --mode agent` automatically starts the container if not running.
 
 ## Task 5: Validation & Testing
 **Goal:** Verify end-to-end agent-driven workflow.
 **Files:** `tests/test_openhands_client.py`, `README.md`
 
 - [ ] Unit tests for `OpenHandsClient` (mock HTTP endpoints).
-- [ ] End-to-end test: Run `suet run --source <loop_factory> --target http://localhost:8081 --mode agent`.
+- [ ] End-to-end test: Run `superApp run --source <loop_factory> --target http://localhost:8081 --mode agent`.
 - [ ] Update `README.md`: Document Docker setup and agent mode usage.
 
 ---

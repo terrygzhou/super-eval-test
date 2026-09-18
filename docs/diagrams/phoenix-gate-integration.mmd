@@ -1,11 +1,11 @@
 %% ============================================================================
-%% suet gate × Phoenix × Loop-Engineering-Factory (LEF) integration
+%% superApp gate × Phoenix × Loop-Engineering-Factory (LEF) integration
 %% ============================================================================
 %% Scope note
 %%   - LEF today only EMITS to Phoenix (write-only observability).
 %%   - The gate adds N-trial fan-out, CI/cost/baseline attributes,
 %%     judge independence, plus a READ path + cross-project trace linking.
-%%   - Items 1-5 = emission-only in superweb-testing (no Phoenix-side change).
+%%   - Items 1-5 = emission-only in superApp-testing (no Phoenix-side change).
 %%   - Items 6-7 = extend LEF's integration surface (query store + linking).
 %% ============================================================================
 
@@ -13,14 +13,14 @@
 %% 1. SYSTEM LANDSCAPE — shared evaluation substrate
 %% ----------------------------------------------------------------------------
 graph TB
-    subgraph SUET["superweb-testing (suet gate)"]
+    subgraph SUET["superApp-testing (superApp gate)"]
         direction LR
         SUITE["Curated Task Suite\n(tasks/*.yaml)\nfixed, versioned inputs"]
         RUNNER["Trial Engine\nrun task × N trials\nscripted, no DataGen"]
         GRADERS["Grader Protocol\nScriptedGrader + LlmJudgeGrader"]
         STAT["stat_gate\nWilson CI + baseline\ncompare"]
         COST["cost_tracker\ntokens/latency/$\nper task"]
-        GATECMD["suet gate CLI\nexit 0/1/2\nJSON + JUnit report"]
+        GATECMD["superApp gate CLI\nexit 0/1/2\nJSON + JUnit report"]
     end
 
     subgraph OTL["OTel (shared emission pipeline)"]
@@ -93,13 +93,13 @@ graph TB
     F7 --> CYCLE
 
     %% styling
-    classDef suet fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef superApp fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
     classDef otel fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
     classDef phx fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
     classDef lef fill:#fff3e0,stroke:#e65100,stroke-width:2px
     classDef feat fill:#fffde7,stroke:#f57f17,stroke-width:2px
 
-    class SUITE,RUNNER,GRADERS,STAT,COST,GATECMD suet
+    class SUITE,RUNNER,GRADERS,STAT,COST,GATECMD superApp
     class TRACER,COLLECTOR otel
     class PHX_UI,PHX_STORE phx
     class CYCLE,PXEVAL,REFLECT lef

@@ -34,7 +34,7 @@ class Pipeline:
     def __init__(
         self,
         config_path: str | None = None,
-        output_dir: str = "./suet_output",
+        output_dir: str = "./superApp_output",
         target_url: str = "",
         source_root: str = "",
         llm_url: str = "",
@@ -433,7 +433,7 @@ class Pipeline:
         # Scripted mode (existing pipeline)
         start_time = time.time()
 
-        console.print("\n[bold cyan]🚀 SuperEval Test Pipeline[/bold cyan]")
+        console.print("\n[bold cyan]🚀 SuperApp Test Pipeline[/bold cyan]")
         console.print("=" * 50)
 
         # Phase 1: Source Analysis

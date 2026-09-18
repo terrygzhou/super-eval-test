@@ -1,4 +1,4 @@
-# SuperEval Test — Stale Code Analysis Report
+# SuperApp Test — Stale Code Analysis Report
 
 **Date:** 2026-08-10
 **Analyzer:** codegraph static analysis + import cross-reference
@@ -118,7 +118,7 @@
 **What it does:**
 - `CRMTestRunner` class that directly orchestrates all 4 pipeline phases
 - Creates source analyzer, data generator, test runner, log monitor, and report
-- Supports `crm` command in CLI (`suet crm run`)
+- Supports `crm` command in CLI (`superApp crm run`)
 - Has its own OpenHands client integration
 
 **Impact:** This module duplicates the pipeline's orchestration logic. The main `Pipeline` class in `pipeline.py` already does:
