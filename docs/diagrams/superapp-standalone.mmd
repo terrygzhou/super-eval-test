@@ -1,0 +1,59 @@
+%% ============================================================================
+%% SuperApp — standalone 4-stage AI-driven E2E web testing pipeline
+%% Stages: Source Analysis → Data Generation → Browser Testing → Log Correlation
+%% ============================================================================
+
+flowchart LR
+    subgraph ANALYSIS["Stage 1 — Source Analysis"]
+        direction TB
+        FORMS["Web App Source\nglob + SKIP_DIRS scan"]
+        SCHEMAS["Field Schemas\nschemas.json"]
+        FORMS --> SCHEMAS
+    end
+
+    subgraph GENERATION["Stage 2 — Data Generation"]
+        direction TB
+        LLMGEN["LLM Data Gen\nforms → rows"]
+        FALLBACK["Template Fallback\n(deterministic)"]
+        DATASET["test_data.json\nN test rows"]
+        LLMGEN --> DATASET
+        LLMGEN -. "LLM unavailable" .-> FALLBACK
+        FALLBACK --> DATASET
+    end
+
+    subgraph EXECUTION["Stage 3 — Browser Testing"]
+        direction TB
+        MODE{"mode"}
+        BROWSER["Playwright\nscripted run\nsteps + console + net"]
+        OPENHANDS["OpenHands agent-server\n3 convs, 1 workspace\nagent mode"]
+        MODE --> BROWSER
+        MODE --> OPENHANDS
+    end
+
+    subgraph CORRELATION["Stage 4 — Log Correlation"]
+        direction TB
+        RESULTS["Results\nsteps + console + net\ntest_results.json"]
+        LOGMON["Log Monitor\ntime-window match"]
+        RESULTS --> LOGMON
+    end
+
+    REPORT["Report\ntest_report.md\n+ artifacts/"]
+
+    %% Stage links
+    SCHEMAS --> LLMGEN
+    DATASET --> MODE
+    BROWSER --> RESULTS
+    OPENHANDS --> RESULTS
+    LOGMON --> REPORT
+
+    %% styling
+    classDef stage fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef out fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef warn fill:#fff3e0,stroke:#e65100,stroke-width:2px
+
+    class FORMS,SCHEMAS stage
+    class LLMGEN,DATASET stage
+    class BROWSER,OPENHANDS,MODE stage
+    class RESULTS,LOGMON stage
+    class REPORT out
+    class FALLBACK warn

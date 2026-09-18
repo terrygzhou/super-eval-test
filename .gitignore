@@ -30,6 +30,9 @@ workspace/
 # Agent working progress
 handoff.md
 
+# Local tool installs (pnpm/npm inside repo)
+node_modules/
+
 # Reports & codegraph
 report/
 .codegraph/

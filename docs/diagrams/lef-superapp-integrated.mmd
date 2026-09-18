@@ -1,0 +1,38 @@
+%% ============================================================================
+%% Loop Engineering Factory × SuperApp — integrated workflow
+%% LEF self-improving loop; UAT node shells out to the superApp CLI;
+%% both LEF BUILD and SuperApp agent mode share one OpenHands agent-server.
+%% ============================================================================
+
+flowchart LR
+    subgraph LEF["LEF self-improving loop (LangGraph)"]
+        direction LR
+        DISCOVER["Discover\nspec intake\n(HIL)"] --> ARCHREVIEW["Arch Review\ngate (HIL)"]
+        ARCHREVIEW -->|"approved"| BUILD["Build Subgraph\nopenhands_build.py"]
+        ARCHREVIEW -. "rejected → re-plan" .-> DISCOVER
+        BUILD --> SEED["Seed Data\ninitial fixtures"]
+        SEED --> VERIFY["UAT Node\nsuperApp run\nagent | scripted"]
+        VERIFY -->|"verdict: pass | fail"| SHIP["Ship\ndeploy to output/"]
+        SHIP --> REFLECT["Reflect\ndiff engine + git"]
+    end
+
+    %% shared OpenHands agent-server (Docker-in-Docker on loop_factory network)
+    AGENT["OpenHands Agent\nagent-server :8000\nshared workspace"]
+    LLM["LLM :8080\nQwen3.6-27B"]
+
+    BUILD -. "delegate build task" .-> AGENT
+    VERIFY -. "3 convs, shared workspace" .-> AGENT
+    VERIFY -. "LLM calls" .-> LLM
+    AGENT -. "inference" .-> LLM
+
+    %% reflection closes the loop
+    REFLECT -. "config diff + git\n→ next cycle" .-> DISCOVER
+
+    %% styling
+    classDef lef fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef oa fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef infra fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+
+    class DISCOVER,ARCHREVIEW,BUILD,SEED,VERIFY,SHIP,REFLECT lef
+    class AGENT oa
+    class LLM infra
