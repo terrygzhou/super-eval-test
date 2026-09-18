@@ -1,0 +1,49 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "SuperApp Standalone Pipeline",
+    "output": "docs/diagrams/superapp-standalone.html",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "analysis", "label": "Source Analysis" },
+    { "id": "generation", "label": "Test Data Generation" },
+    { "id": "execution", "label": "Browser Testing" },
+    { "id": "correlation", "label": "Log Correlation" },
+    { "id": "delivery", "label": "Reports & Artifacts" }
+  ],
+  "phases": [
+    { "id": "extract", "label": "Extract & Generate", "fromCol": 0, "toCol": 1 },
+    { "id": "test", "label": "Execute & Correlate", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "ship", "label": "Deliver", "fromCol": 4, "toCol": 4, "variant": "dashed" }
+  ],
+  "mainPath": ["forms", "schemas", "llmgen", "dataset", "browser", "results", "logs", "report"],
+  "nodes": [
+    { "id": "forms", "lane": "analysis", "col": 0, "type": "frontend", "label": "Web App Source", "sublabel": "glob + SKIP_DIRS" },
+    { "id": "schemas", "lane": "analysis", "col": 1, "type": "database", "label": "Schemas + Routes", "sublabel": "Pydantic models", "tag": "schemas.json", "width": 120 },
+    { "id": "llmgen", "lane": "generation", "col": 2, "type": "cloud", "label": "LLM Data Gen", "sublabel": "/v1/chat/completions", "width": 110 },
+    { "id": "fallback", "lane": "generation", "col": 2, "type": "external", "label": "Rule Fallback", "sublabel": "on LLM failure", "yOffset": 60 },
+    { "id": "dataset", "lane": "generation", "col": 3, "type": "database", "label": "Test Dataset", "sublabel": "n variations", "tag": "test_data.json" },
+    { "id": "browser", "lane": "execution", "col": 4, "type": "backend", "label": "Playwright", "sublabel": "Chromium · steps", "width": 100 },
+    { "id": "results", "lane": "correlation", "col": 4, "type": "database", "label": "Steps + Console + Net", "sublabel": "TestRunResult", "tag": "test_results.json", "width": 140 },
+    { "id": "logs", "lane": "correlation", "col": 5, "type": "messagebus", "label": "Log Monitor", "sublabel": "docker · file · journal", "width": 110 },
+    { "id": "report", "lane": "delivery", "col": 5, "type": "external", "label": "Report + Artifacts", "sublabel": "JSON + screenshots", "width": 130 }
+  ],
+  "edges": [
+    { "from": "forms", "to": "schemas", "label": "extract forms + validators", "role": "main", "variant": "emphasis" },
+    { "from": "schemas", "to": "llmgen", "label": "JSON schema payload", "role": "main", "variant": "emphasis" },
+    { "from": "llmgen", "to": "fallback", "label": "on failure", "role": "error", "variant": "dashed" },
+    { "from": "llmgen", "to": "dataset", "label": "n variations", "role": "main", "variant": "emphasis" },
+    { "from": "fallback", "to": "dataset", "label": "rule-based rows", "role": "error", "variant": "dashed" },
+    { "from": "dataset", "to": "browser", "label": "fill & submit per form", "role": "main", "variant": "emphasis" },
+    { "from": "browser", "to": "results", "label": "record each step", "role": "main", "variant": "emphasis" },
+    { "from": "results", "to": "logs", "label": "time-window match", "role": "async", "variant": "dashed" },
+    { "from": "logs", "to": "report", "label": "ErrorCorrelation + artifacts", "role": "main", "variant": "emphasis" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Scripted Path", "items": ["Four deterministic phases", "LLM only for test-data variety", "Playwright drives Chromium"] },
+    { "dot": "violet", "title": "Agent Path (optional)", "items": ["OpenHands agent-server container", "3 sequential conversations share one workspace", "Agent writes its own Playwright scripts"] },
+    { "dot": "amber", "title": "Evidence Contract", "items": ["console + network captured per step", "server logs time-windowed", "correlations join browser events to log lines"] }
+  ]
+}

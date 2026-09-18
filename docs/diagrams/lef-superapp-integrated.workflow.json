@@ -1,0 +1,52 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Loop Factory × SuperApp Integration",
+    "output": "docs/diagrams/lef-superapp-integrated.html",
+    "quality_profile": "showcase"
+  },
+  "lanes": [
+    { "id": "lef", "label": "Loop Factory (LangGraph)" },
+    { "id": "build", "label": "Build (OpenHands)" },
+    { "id": "superapp", "label": "SuperApp CLI (UAT)" },
+    { "id": "openhands", "label": "Shared OpenHands Agent" },
+    { "id": "reflect", "label": "Reflect (Self-Improve)" },
+    { "id": "external", "label": "Shared Infra", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "plan", "label": "Plan", "fromCol": 0, "toCol": 1 },
+    { "id": "build", "label": "Build + UAT", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "ship", "label": "Ship + Reflect", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["discover", "archreview", "build", "seed", "verify", "ship", "reflect"],
+  "nodes": [
+    { "id": "discover", "lane": "lef", "col": 0, "type": "backend", "label": "Discover", "sublabel": "spec intake", "tag": "HIL", "width": 100 },
+    { "id": "archreview", "lane": "lef", "col": 1, "type": "security", "label": "Arch Review", "sublabel": "gate", "tag": "HIL" },
+    { "id": "build", "lane": "build", "col": 2, "type": "cloud", "label": "Build Subgraph", "sublabel": "openhands_build.py", "width": 110 },
+    { "id": "seed", "lane": "lef", "col": 2, "type": "backend", "label": "Seed Data", "sublabel": "initial fixtures" },
+    { "id": "verify", "lane": "superapp", "col": 3, "type": "external", "label": "UAT Node", "sublabel": "superApp run", "tag": "agent|scripted", "width": 100 },
+    { "id": "ship", "lane": "lef", "col": 4, "type": "frontend", "label": "Ship", "sublabel": "deploy to output/" },
+    { "id": "reflect", "lane": "reflect", "col": 5, "type": "database", "label": "Reflect", "sublabel": "diff engine + git" },
+    { "id": "agentserver", "lane": "openhands", "col": 3, "type": "cloud", "label": "OpenHands Agent", "sublabel": "agent-server :8000", "width": 110 },
+    { "id": "llm", "lane": "external", "col": 4, "type": "external", "label": "LLM :8080", "sublabel": "Qwen3.6-27B" }
+  ],
+  "edges": [
+    { "from": "discover", "to": "archreview", "label": "spec + tasks", "role": "main", "variant": "emphasis" },
+    { "from": "archreview", "to": "build", "label": "approved", "role": "main", "variant": "emphasis" },
+    { "from": "archreview", "to": "discover", "label": "rejected → re-plan", "role": "error", "variant": "dashed" },
+    { "from": "build", "to": "seed", "label": "code + UAT gates", "role": "main", "variant": "emphasis" },
+    { "from": "build", "to": "agentserver", "label": "delegate build task", "role": "async", "variant": "dashed" },
+    { "from": "seed", "to": "verify", "label": "target_url + source_root", "role": "main", "variant": "emphasis" },
+    { "from": "verify", "to": "agentserver", "label": "3 convs, shared workspace", "role": "async", "variant": "dashed" },
+
+    { "from": "verify", "to": "ship", "label": "verdict: pass | fail", "role": "main", "variant": "emphasis" },
+    { "from": "ship", "to": "reflect", "label": "cycle metrics", "role": "main", "variant": "emphasis" },
+    { "from": "reflect", "to": "discover", "label": "config diff + git", "role": "return", "variant": "dashed" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "UAT Subprocess", "items": ["verify lane invokes superApp CLI", "agent mode: 3 OpenHands conversations share one workspace", "scripted mode: deterministic Playwright + LLM data gen", "fallback: LLM UAT on CLI unavailability"] },
+    { "dot": "violet", "title": "Shared OpenHands", "items": ["one agent-server container on loop_factory network", "superApp agent mode + LEF BUILD both delegate to it", "Docker-in-Docker via /var/run/docker.sock mount", "LLM pinned to Qwen3.6-27B on :8080"] },
+    { "dot": "amber", "title": "Reflection Loop", "items": ["Reflect aggregates cycle metrics via FeedbackAggregator", "diff_engine proposes config changes (incl. superApp key)", "HIL approval + git-workflow apply_yaml_diff", "SuperApp verdicts drive next-cycle build gate"] }
+  ]
+}
