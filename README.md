@@ -9,17 +9,22 @@
   - `scripted` — Deterministic Playwright-based pipeline (default)
   - `agent` — OpenHands AI agent delegation (3-conversation workflow)
 - **Source-aware test data**: Extracts form schemas, endpoints, and input validation rules from source code
-- **LLM-powered generation**: Uses any OpenAI-compatible model
+- **Git-URL source**: `--source https://…` or `git@…` clones into `<output>/source/` automatically
+- **LLM-powered generation**: Uses any OpenAI-compatible model (default: `Qwen3.6-27B` on `localhost:8080`), with deterministic template fallback when the LLM is unreachable
 - **Structured output**: JSON results with timestamps, test data, and server log correlation
+- **Loop Engineering Factory integration**: SuperApp is the UAT node inside LEF's self-improving loop — LEF shells out to `superApp run` and the two systems share one OpenHands agent-server and LLM endpoint
 
 ## Quick Start
 
 ```bash
-# Install
+# Install (reinstall after pulling — the `superApp` entry point must resolve)
 pip install -e .
 
 # Run full pipeline
-superApp run --target http://localhost:8080 --source /path/to/source
+superApp run --target http://localhost:8081 --source /path/to/source
+
+# Or run from a git URL (cloned into <output>/source/)
+superApp run --target http://localhost:8081 --source https://github.com/org/app.git
 
 # Dry run (analysis only)
 superApp run --source /path/to/source --dry-run
@@ -29,6 +34,9 @@ superApp analyze --source /path/to/source
 
 # Generate test data from existing schemas
 superApp generate --schemas data/schemas.json
+
+# Automated setup + run (sets env defaults, starts OpenHands, runs pipeline)
+./run_test.sh
 ```
 
 ## CLI Reference
@@ -36,13 +44,15 @@ superApp generate --schemas data/schemas.json
 ```bash
 # Main pipeline
 superApp run \
-  --target http://localhost:8080 \
+  --target http://localhost:8081 \
   --source /path/to/source \
   --output ./superApp_output \
+  --config config.yaml \
   --llm-url http://localhost:8080 \
-  --llm-model gpt-4 \
+  --llm-model Qwen3.6-27B \
   --variations 3 \
   --mode scripted \
+  --agent-workspace /path/to/host/dir \
   --agent-timeout 600
 
 # OpenHands container management
@@ -50,6 +60,19 @@ superApp openhands-start   # Start container on port 3005
 superApp openhands-stop    # Stop container
 superApp openhands-status  # Check status
 ```
+
+| Option | Default | Notes |
+|---|---|---|
+| `--target` / `-t` | — | Required unless `--dry-run` |
+| `--source` / `-s` | — | Local path **or** git URL; required |
+| `--output` / `-o` | `./superApp_output` | Artifacts directory |
+| `--config` / `-c` | none | Optional `config.yaml` |
+| `--llm-url` / `--llm-model` | `http://localhost:8080` / `Qwen3.6-27B` | OpenAI-compatible endpoint |
+| `--variations` / `-v` | 3 | Test data variations per form (1–5) |
+| `--dry-run` | off | Analysis only |
+| `--mode` | `scripted` | `scripted` \| `agent` |
+| `--agent-workspace` | empty | Host dir mounted into the OpenHands container (agent mode) |
+| `--agent-timeout` | 600 | Agent timeout in seconds |
 
 ## Architecture
 
@@ -81,7 +104,7 @@ graph LR
         LLM["LLM Endpoint\n(vLLM / OpenAI)"]
         BROWSER["Playwright\nChromium"]
         TARGET[/"Target Web App"/]
-        LOGS[/"Server Logs\n(Docker/file/journalctl)"/]
+        LOGS[/"Server Logs\n(Docker/file/journalctl)"]
     end
 
     USER -->|"superApp run"| CLI_CLI
@@ -106,19 +129,47 @@ graph LR
     CONV -->|"test data gen"| LLM
 ```
 
+Higher-level scenario views (standalone pipeline and LEF × SuperApp integration) live in [`docs/diagrams/`](docs/diagrams/):
+- `superapp-standalone.mmd` / `.svg` — the 4-stage pipeline, Mermaid-rendered
+- `lef-superapp-integrated.mmd` / `.svg` — the LEF loop with SuperApp as UAT node
+- `*.workflow.json` / `.html` — interactive Archify versions of the same two diagrams
+
 ### Scripted Mode
 
 Runs the 4-phase pipeline deterministically:
 1. **Analyze** — Scans source code for forms, routes, and input schemas
-2. **Generate** — Creates N test data variations per form via LLM
+2. **Generate** — Creates N test data variations per form via LLM (template fallback when the LLM is down)
 3. **Test** — Executes Playwright browser tests with generated data
-4. **Correlate** — Matches server logs to test results
+4. **Correlate** — Matches server logs to test results by time window
 
 ### Agent Mode
-Delegates to OpenHands Agent Server via 3 sequential conversations:
+Delegates to OpenHands Agent Server via 3 sequential conversations sharing one workspace:
 1. **Analyze** — AI examines source code and generates schemas + test data
 2. **Test** — AI writes and runs Playwright tests
 3. **Report** — AI compiles structured results
+
+## Loop Engineering Factory Integration
+
+SuperApp is the **UAT node** in the LEF self-improving loop (LangGraph: `DISCOVER → DEFINE → PLAN → ARCH_REVIEW → BUILD → SEED_DATA → VERIFY → SHIP → REFLECT`).
+
+```
+LEF cycle:
+  DISCOVER → … → BUILD (OpenHands) → SEED_DATA → VERIFY ─┐
+      ↑                                                    │
+      └──────── REFLECT ←── SHIP ←────────────────────────┘
+                                    │
+                                    └─ superApp run (subprocess)
+                                       agent mode → shared OpenHands container
+```
+
+Key integration points:
+
+- **Subprocess call** — LEF's `VERIFY` node shells out to `superApp run …`; the `superApp` command name is part of the public contract (rename it and LEF breaks). LEF reads its own `superApp:` config key and passes `superApp_mode` (`scripted` \| `agent`) through its graph state.
+- **Shared OpenHands agent-server** — LEF's BUILD subgraph and SuperApp's agent mode both delegate to the *same* `openhands-server` container on `loop_factory_loop_factory_network`, so builds and UAT runs share one agent workspace.
+- **Shared LLM** — both systems pin to `Qwen3.6-27B` on `:8080` (host-gateway path from Docker).
+- **Feedback loop** — SuperApp verdicts feed LEF's `REFLECT` node (`FeedbackAggregator` + `diff_engine`), which proposes config diffs — including the `superApp:` key — applied through a HIL gate on the next cycle.
+
+See [`docs/diagrams/lef-superapp-integrated.svg`](docs/diagrams/lef-superapp-integrated.svg) for the full topology.
 
 ## Output
 
@@ -138,7 +189,7 @@ superApp_output/
 
 ### All Modes
 - **Python 3.12+**
-- **LLM endpoint** (OpenAI-compatible API). Must be reachable from your host machine.
+- **LLM endpoint** (OpenAI-compatible API). Default: `Qwen3.6-27B` on `http://localhost:8080`. Must be reachable from your host machine.
 
 ### Scripted Mode Only
 - **Playwright** browsers: `playwright install`
@@ -153,14 +204,15 @@ Agent mode requires the **OpenHands Agent Server** container. It is managed via 
 |---|---|
 | Docker & Docker Compose v2 | Container runtime + compose orchestration |
 | Docker-in-Docker | OpenHands mounts `/var/run/docker.sock` to spawn sandbox containers |
-| Accessible LLM | `LLM_BASE_URL` + `LLM_MODEL` env vars on the container (e.g. vLLM, OpenAI) |
+| Accessible LLM | `LLM_BASE_URL` + `LLM_MODEL` env vars on the container (default: `Qwen3.6-27B` on host-gateway `:8080`) |
+| `loop_factory_loop_factory_network` | External Docker network; the container joins it so it shares an agent-server with LEF's BUILD subgraph |
 
 #### Quick Setup
 
 ```bash
-# 1. Configure your LLM endpoint in compose.yaml environment vars:
-#    - LLM_BASE_URL=http://localhost:8080     # your LLM gateway
-#    - LLM_MODEL=gpt-4                        # model name
+# 1. LLM endpoint is configured in compose.yaml environment vars:
+#    - LLM_BASE_URL=http://host.docker.internal:8080
+#    - LLM_MODEL=Qwen3.6-27B
 #
 # 2. Start the OpenHands container:
 docker compose -f compose.yaml up -d
@@ -170,7 +222,7 @@ curl -s http://localhost:3005/health
 # → {"status":"ok"}
 #
 # 4. Run the pipeline in agent mode:
-python3 -m src.cli run --target http://host.docker.internal:8080 \
+python3 -m src.cli run --target http://host.docker.internal:8081 \
   --source /path/to/source --output ./superApp_test \
   --mode agent --agent-timeout 3600
 #
@@ -202,20 +254,21 @@ Tested with **OpenHands Agent Server v1.30.0**. Newer versions may require paylo
 
 ## Config (Optional)
 
-Create `config.yaml` for persistent settings:
+Create `config.yaml` for persistent settings (see [`config.example.yaml`](config.example.yaml)):
 
 ```yaml
 target:
-  url: "http://localhost:8080"
+  url: "http://localhost:8081"
+  scan_paths: ["/", "/login", "/register"]
 
 source:
   root: "/path/to/source"
-  form_patterns: ["*.tsx", "*.py"]
-  route_patterns: ["router.ts", "routes.ts"]
+  form_patterns: ["**/forms.py", "**/schemas.py", "**/models.py"]
+  route_patterns: ["**/routes.py", "**/api.py"]
 
 llm:
   base_url: "http://localhost:8080"
-  model: "gpt-4"
+  model: "Qwen3.6-27B"
 
 browser:
   headless: true
@@ -225,14 +278,29 @@ browser:
     height: 720
 
 logs:
-  type: "docker"
+  type: "docker"            # docker | file | journalctl
   docker_container: "myapp"
   error_patterns:
     - "ERROR"
     - "Exception"
+    - "Traceback"
 
 pipeline:
   data_variations: 3
+  max_pages: 3
+```
+
+## Repository Layout
+
+```
+src/                  CLI + pipeline modules (Typer app `superApp`)
+compose.yaml          OpenHands agent-server container
+run_test.sh           Automated setup & run script (SUPERAPP_* env overrides)
+config.example.yaml   Configuration template
+tools/mermaid-cli/    Local pnpm install of @mermaid-js/mermaid-cli
+                      (used to render docs/diagrams/*.mmd → .svg)
+docs/diagrams/        Architecture diagrams (Mermaid .mmd/.svg + Archify .json/.html)
+report/               Test reports (gitignored)
 ```
 
 ## License
