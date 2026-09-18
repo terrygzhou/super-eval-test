@@ -1,0 +1,71 @@
+%% ============================================================================
+%% Closed-loop self-improvement: LEF cycle → gate → REFLECT → next cycle
+%% ============================================================================
+%% The evaluation outcome feeds back into LEF's REFLECT node so the next
+%% iteration of the loop is informed by statistically-gated evaluation.
+%% ============================================================================
+
+flowchart TB
+    subgraph LEF["LEF self-improving loop (LangGraph)"]
+        direction LR
+        DISCOVER["DISCOVER"] --> DEFINE["DEFINE"] --> PLAN["PLAN"]
+        PLAN --> ARCH["ARCH_REVIEW"]
+        ARCH --> BUILD["BUILD\nOpenHands + gates"]
+        BUILD --> SEED["SEED_DATA"] --> VERIFY["VERIFY"]
+        VERIFY --> SHIP["SHIP"] --> REFLECT["REFLECT\nFeedbackAggregator\n+ diff_engine\n→ config diff"]
+    end
+
+    SHIP -->|"product shipped\nto output/"| GATE["suet gate run\n--target <shipped>\n--suite tasks/\n--n 7\n--baseline baseline.json"]
+
+    subgraph GATEPHASE["Gate evaluation (suet gate)"]
+        direction LR
+        TRIALS["N trials per task\n(1:N:N span fan-out)"]
+        GRADE["Grade\nScripted + LLM-judge\n(judge: independent)"]
+        WILSON["Wilson CI +\nbaseline compare\n(regression verdict)"]
+        CMETRIC["Cost/latency\nmetrics per task"]
+        TRIALS --> GRADE --> WILSON
+        CMETRIC --> WILSON
+    end
+
+    GATE --> GATEPHASE
+
+    subgraph ART["Artifacts"]
+        direction LR
+        RPTJSON["gate_report.json\n(cost + verdict + CI)"]
+        MD["gate_report.md\n(table)"]
+        PHX["OTel spans →\nPhoenix store\n(gate.run + baseline\n.compare + cost.trial)"]
+    end
+
+    GATEPHASE --> RPTJSON & MD & PHX
+
+    subgraph ADAPT["Feature 6 — LEF adapter (thin)"]
+        direction LR
+        ADAPTER["gate_report.json →\nCycleMetrics fields:\n  uat_pass_rate\n  test_flakiness_rate\n  latency_ms\n+ regression signal:\n  gate_verdict\n  regressed_tasks\n  cost_delta_pct"]
+    end
+
+    RPTJSON --> ADAPTER
+    ADAPTER --> RECORDSTEP["REFLECT:\nFeedbackAggregator\n.record_cycle(metrics=…)"]
+    RECORDSTEP --> CONFIGDIFF["diff_engine:\nanalyze metrics across\ncycles → propose\nconfig diffs"]
+    CONFIGDIFF --> HIL{"HIL gate\nhuman\napproval?"}
+    HIL -->|"approve"| APPLY["apply config change\n(next cycle's prompts\n/ model / skills)"]
+    HIL -->|"reject"| ARCHIVE["archive as\nnegative example"]
+    APPLY --> DISCOVER
+    ARCHIVE --> DISCOVER
+
+    %% Phoenix read path (feature 6, v2)
+    PHX -. "v2: REFLECT queries\nhistorical verdicts" .-> RECORDSTEP
+
+    %% Cross-project trace linking (feature 7)
+    REFLECT -. "inject lef.cycle_id\n+ config_version\ninto gate span" .-> GATE
+
+    %% styling
+    classDef lef fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef gate fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef art fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef adapt fill:#fffde7,stroke:#f57f17,stroke-width:2px
+    classDef hil fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+
+    class DISCOVER,DEFINE,PLAN,ARCH,BUILD,SEED,VERIFY,SHIP,REFLECT lef
+    class GATE,TRIALS,GRADE,WILSON,CMETRIC gate
+    class RPTJSON,MD,PHX art
+    class HIL hil

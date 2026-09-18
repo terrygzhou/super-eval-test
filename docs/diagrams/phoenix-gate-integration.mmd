@@ -1,0 +1,106 @@
+%% ============================================================================
+%% suet gate × Phoenix × Loop-Engineering-Factory (LEF) integration
+%% ============================================================================
+%% Scope note
+%%   - LEF today only EMITS to Phoenix (write-only observability).
+%%   - The gate adds N-trial fan-out, CI/cost/baseline attributes,
+%%     judge independence, plus a READ path + cross-project trace linking.
+%%   - Items 1-5 = emission-only in superweb-testing (no Phoenix-side change).
+%%   - Items 6-7 = extend LEF's integration surface (query store + linking).
+%% ============================================================================
+
+%% ----------------------------------------------------------------------------
+%% 1. SYSTEM LANDSCAPE — shared evaluation substrate
+%% ----------------------------------------------------------------------------
+graph TB
+    subgraph SUET["superweb-testing (suet gate)"]
+        direction LR
+        SUITE["Curated Task Suite\n(tasks/*.yaml)\nfixed, versioned inputs"]
+        RUNNER["Trial Engine\nrun task × N trials\nscripted, no DataGen"]
+        GRADERS["Grader Protocol\nScriptedGrader + LlmJudgeGrader"]
+        STAT["stat_gate\nWilson CI + baseline\ncompare"]
+        COST["cost_tracker\ntokens/latency/$\nper task"]
+        GATECMD["suet gate CLI\nexit 0/1/2\nJSON + JUnit report"]
+    end
+
+    subgraph OTL["OTel (shared emission pipeline)"]
+        direction LR
+        TRACER["OTelTracer facade\n(graceful no-op if absent)"]
+        COLLECTOR["OTel Collector\n:4318 / :4317"]
+    end
+
+    subgraph PHX["Phoenix (shared evaluation substrate)"]
+        direction LR
+        PHX_UI["Phoenix UI\ntraces · sessions\n· evals · metrics"]
+        PHX_STORE["Phoenix store\n(spans + attributes)\nqueryable read path"]
+    end
+
+    subgraph LEF["Loop-Engineering-Factory (LEF)"]
+        direction LR
+        CYCLE["Workflow cycle\nDISCOVER→…→SHIP"]
+        PXEVAL["service/evaluator.py\nLLM-judge per phase\n→ eval.* span"]
+        REFLECT["REFLECT node\nFeedbackAggregator\n+ diff_engine"]
+    end
+
+    SUITE --> RUNNER --> GRADERS --> STAT --> GATECMD
+    COST --> GATECMD
+    RUNNER --> TRACER
+    GRADERS --> TRACER
+    STAT --> TRACER
+    COST --> TRACER
+    TRACER --> COLLECTOR --> PHX_STORE
+    PHX_STORE --> PHX_UI
+    PXEVAL --> TRACER
+    CYCLE --> PXEVAL
+    GATECMD -. "gate outcome → REFLECT (feature 6)" .-> REFLECT
+    REFLECT -. "query store (feature 6)" .-> PHX_STORE
+    CYCLE -. "inject trace context (feature 7)" .-> GATECMD
+
+    %% ----------------------------------------------------------------------------
+    %% 2. SPAN CARDINALITY — 1:1 (LEF) vs 1:N:N (gate)
+    %% ----------------------------------------------------------------------------
+
+    subgraph SPANS["OTel span shapes emitted to Phoenix"]
+        direction TB
+        L1["LEF today: 1 eval span per phase per cycle\n  cycle → phase → eval.{name}   (1:1)"]
+        G1["Gate NEW: gate.run → task.{name} → trial.{i}  for i in 1..N   (1:N:N)"]
+        G2["Gate NEW: baseline.compare span per task\n  (regressed / improved / unchanged)"]
+        G3["Gate NEW: cost.trial span per trial\n  (tokens_in/out, llm_calls, $)"]
+    end
+
+    %% ----------------------------------------------------------------------------
+    %% 3. FEATURE → USE CASE MATRIX
+    %% ----------------------------------------------------------------------------
+
+    subgraph UCM["Feature → Use case (when you reach for it)"]
+        direction TB
+        F1["1. N-trial fan-out\nWHY did a task flip pass/fail?\ninspect the 2 failing trials\nin a 5/7 success run"]
+        F2["2. CI/regression attrs\nREAL regression or noise?\nverdict + wilson_ci_delta\nsignificant drop only"]
+        F3["3. Cost attrs\nSame accuracy, 3× cost?\n$ + tokens per task\nhard cost gate"]
+        F4["4. Baseline-compare span\nTrend a task across 20 runs\nimproved→unchanged→regressed\nin one UI view"]
+        F5["5. Judge independence\nJudge grades its own output?\nseparate judge: config\nfilter evals by independence"]
+        F6["6. Phoenix query (read)\nREFLECT needs HISTORICAL verdicts\nquery store, no file parsing\ncloses the loop"]
+        F7["7. Cross-project trace link\nWHICH cycle triggered which gate?\ninject lef.cycle_id +\nconfig_version into gate span"]
+    end
+
+    %% wiring feature → capability
+    F1 --> G1
+    F2 --> G2
+    F3 --> G3
+    F4 --> G2
+    F5 --> GRADERS
+    F6 --> PHX_STORE
+    F7 --> CYCLE
+
+    %% styling
+    classDef suet fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef otel fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef phx fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef lef fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    classDef feat fill:#fffde7,stroke:#f57f17,stroke-width:2px
+
+    class SUITE,RUNNER,GRADERS,STAT,COST,GATECMD suet
+    class TRACER,COLLECTOR otel
+    class PHX_UI,PHX_STORE phx
+    class CYCLE,PXEVAL,REFLECT lef
+    class F1,F2,F3,F4,F5,F6,F7 feat
