@@ -17,8 +17,8 @@ target:
 
 # Source code analysis
 source:
-  # Path to target web app source code
-  root: "~/workspace/projects/loop_factory"
+  # Path to target web app source code (required — no default; use --source or set this)
+  root: "/path/to/your/webapp/source"
   # File patterns to scan for form schemas
   form_patterns:
     - "**/forms.py"

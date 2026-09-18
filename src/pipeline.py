@@ -423,8 +423,11 @@ class Pipeline:
         """Run the full pipeline in the configured mode."""
         if self.mode == "agent":
             source_root = source_override or self.config.get("source", {}).get(
-                "root", "~/workspace/projects/loop_factory"
+                "root", ""
             )
+            if not source_root:
+                console.print("[red]Error: source root is required (set --source or source.root in config)[/red]")
+                raise SystemExit(1)
             target_url = target_override or self.config.get("target", {}).get(
                 "url", "http://localhost:8081"
             )
@@ -475,8 +478,11 @@ class Pipeline:
     async def phase1_analyze(self, source_override: str = "") -> list[dict]:
         """Phase 1: Analyze source code for form schemas."""
         source_root = source_override or self.config.get("source", {}).get(
-            "root", "~/workspace/projects/loop_factory"
+            "root", ""
         )
+        if not source_root:
+            console.print("[red]Error: source root is required (set --source or source.root in config)[/red]")
+            raise SystemExit(1)
         form_patterns = self.config.get("source", {}).get("form_patterns", [])
         route_patterns = self.config.get("source", {}).get("route_patterns", [])
 

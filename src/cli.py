@@ -116,7 +116,7 @@ def run(
             return
 
         report = await p.run(source_override=source_path, target_override=target)
-        console.print(f"\n[bold]Pipeline complete.[/bold] Report: {output}/report/correlation_report.json")
+        console.print(f"\n[bold]Pipeline complete.[/bold] Report: {output}/logs/correlation_report.json")
         # Force GC before asyncio.run() closes the event loop to avoid
         # "RuntimeError: Event loop is closed" on Playwright subprocess __del__
         gc.collect()
