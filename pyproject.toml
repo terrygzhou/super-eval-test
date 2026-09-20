@@ -25,3 +25,12 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["src*"]
+[tool.pytest.ini_options]
+filterwarnings = [
+    # TestStepResult / TestRunResult are dataclasses imported into test modules;
+    # pytest shouldn't try to collect them as test classes.
+    "ignore::pytest.PytestCollectionWarning",
+    # Benign Playwright subprocess __del__ after asyncio.run closes the loop
+    # (CPython issue 40674). The gate/run commands drain it via gc.collect().
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]

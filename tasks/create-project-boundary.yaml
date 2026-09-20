@@ -1,0 +1,10 @@
+# Curated task: boundary inputs (edge-of-range values that trigger different
+# branches in the app under test).
+name: create-project-boundary
+description: "Boundary values: name at min/max length, owner at edge."
+form: CreateProjectForm
+data:
+  name: "a"
+  owner: "t@example.com"
+graders:
+  - type: scripted

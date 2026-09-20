@@ -49,6 +49,17 @@ logs:
     - "Connection refused"
 
 # Playwright settings
+# OpenHands Agent Server (agent mode)
+openhands:
+  # Where the agent server is. Default http://localhost:3005 (SuperApp's own compose container).
+  # To reuse a running one, e.g. the openhands-canvas container:
+  #   url: "http://localhost:43006"
+  #   use_existing_server: true
+  #   auth_token: "your-openhands-api-key"   # sent as Authorization: Bearer <token>
+  # url: "http://localhost:3005"
+  # use_existing_server: false
+  # auth_token: ""
+
 browser:
   headless: true
   timeout_ms: 30000
@@ -66,3 +77,21 @@ pipeline:
   max_pages: 3
   # Save artifacts
   artifacts_dir: "./artifacts"
+
+
+# Evaluation gate (superApp gate)
+# Judge: optional LLM grader. When this block is absent, the gate uses the
+# deterministic ScriptedGrader only (zero LLM calls).
+# judge:
+#   base_url: "http://localhost:8080"
+#   model: "Qwen3.6-27B"
+#   api_key: "not-needed"
+#   rubric: "Pass only if the form submission completed and the confirmation
+#            screen is visible. Fail on any error banner or empty validation."
+
+# Cost tracking: rate table for estimated cost (USD) per gate run.
+# Defaults are 0.0 = instrumented, not priced. Set values to produce a $ figure.
+cost:
+  rate_table:
+    per_1k_input_usd: 0.0
+    per_1k_output_usd: 0.0

@@ -1,0 +1,13 @@
+{
+  "records": [
+    {"form_name": "RegisterForm", "data": {"year": 1989}, "variation": 1, "notes": "just below range"},
+    {"form_name": "RegisterForm", "data": {"year": 1990}, "variation": 2, "notes": "lower bound"},
+    {"form_name": "RegisterForm", "data": {"year": 1995}, "variation": 3, "notes": "mid range"},
+    {"form_name": "RegisterForm", "data": {"year": 1999}, "variation": 4, "notes": "just inside upper"},
+    {"form_name": "RegisterForm", "data": {"year": 2000}, "variation": 5, "notes": "trigger point"},
+    {"form_name": "RegisterForm", "data": {"year": 2001}, "variation": 6, "notes": "just above"},
+    {"form_name": "RegisterForm", "data": {"year": -1},   "variation": 7, "notes": "invalid negative"},
+    {"form_name": "RegisterForm", "data": {"year": 9999}, "variation": 8, "notes": "invalid high"},
+    {"form_name": "RegisterForm", "data": {"year": ""},   "variation": 9, "notes": "invalid empty"}
+  ]
+}

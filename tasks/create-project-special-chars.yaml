@@ -1,0 +1,9 @@
+# Curated task: special-character / unicode inputs that must not break the app.
+name: create-project-special-chars
+description: "Unicode + symbol-heavy inputs; expect the app to handle them."
+form: CreateProjectForm
+data:
+  name: "Pröject ☃ & @ 2026"
+  owner: "üñï@exämple.com"
+graders:
+  - type: scripted

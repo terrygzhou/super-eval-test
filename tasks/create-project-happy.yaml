@@ -1,0 +1,9 @@
+# Curated task: happy-path project creation (fixed inputs, not LLM-generated).
+name: create-project-happy
+description: "Create a project with valid data; expect the success page."
+form: CreateProjectForm
+data:
+  name: "Test Project"
+  owner: "terry@example.com"
+graders:
+  - type: scripted
