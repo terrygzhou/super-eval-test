@@ -101,23 +101,8 @@ class LogMonitor:
             )
             raw = result.stdout + result.stderr
 
-            events: list[LogEvent] = []
-            for line in raw.splitlines():
-                for i, pattern in enumerate(self.compiled_patterns):
-                    if pattern.search(line):
-                        events.append(
-                            LogEvent(
-                                timestamp=datetime.fromtimestamp(
-                                    end_time, tz=timezone.utc
-                                ).isoformat(),
-                                level="ERROR",
-                                message=line.strip(),
-                                source=self.docker_container,
-                                matched_pattern=self.error_patterns[i],
-                            )
-                        )
-                        break
-            return events
+            ts = datetime.fromtimestamp(end_time, tz=timezone.utc).isoformat()
+            return self._match_patterns(raw.splitlines(), self.docker_container, ts)
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return []
 
@@ -128,31 +113,16 @@ class LogMonitor:
         if not self.log_file:
             return []
 
-        events: list[LogEvent] = []
-        path = Path(self.log_file).expanduser().resolve()
-
-        if not path.exists():
-            return []
-
         try:
+            path = Path(self.log_file).expanduser().resolve()
+            if not path.exists():
+                return []
             content = path.read_text(encoding="utf-8", errors="replace")
-            for line in content.splitlines()[-500:]:  # Last 500 lines
-                for i, pattern in enumerate(self.compiled_patterns):
-                    if pattern.search(line):
-                        events.append(
-                            LogEvent(
-                                timestamp=datetime.now(timezone.utc).isoformat(),
-                                level="ERROR",
-                                message=line.strip(),
-                                source=str(path),
-                                matched_pattern=self.error_patterns[i],
-                            )
-                        )
-                        break
+            lines = content.splitlines()[-500:]  # Last 500 lines
+            ts = datetime.now(timezone.utc).isoformat()
+            return self._match_patterns(lines, str(path), ts)
         except OSError:
-            pass
-
-        return events
+            return []
 
     def _collect_journal_logs(
         self, start_time: float, end_time: float
@@ -169,27 +139,21 @@ class LogMonitor:
                 capture_output=True, text=True, timeout=30,
             )
             raw = result.stdout
-
-            events: list[LogEvent] = []
-            for line in raw.splitlines():
-                for i, pattern in enumerate(self.compiled_patterns):
-                    if pattern.search(line):
-                        events.append(
-                            LogEvent(
-                                timestamp=datetime.now(timezone.utc).isoformat(),
-                                level="ERROR",
-                                message=line.strip(),
-                                source=self.journal_unit,
-                                matched_pattern=self.error_patterns[i],
-                            )
-                        )
-                        break
-            return events
+            ts = datetime.now(timezone.utc).isoformat()
+            return self._match_patterns(raw.splitlines(), self.journal_unit, ts)
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return []
 
     def correlate(self) -> list[ErrorCorrelation]:
-        """Correlate test events with log errors."""
+        """Correlate test events with log errors within a time window.
+
+        Each log event is attached to test events that fall within
+        ``time_window_sec`` of its timestamp. Log events without a parseable
+        timestamp (docker ``--since/--until`` batches, journal files without
+        embedded times) are attached to ALL test events as before, which
+        matches the original behaviour when no timestamp information is
+        available.
+        """
         self.correlations = []
 
         if not self.log_events:
@@ -202,14 +166,43 @@ class LogMonitor:
             )
 
             for log_event in self.log_events:
-                # Check if log event is within time window of test event
-                # (simplified — in production, parse timestamps properly)
-                correlation.related_logs.append(log_event)
+                # Compare timestamps. LogEvent.timestamp is an ISO string;
+                # TestEvent.timestamp is a float epoch.
+                try:
+                    log_ts = datetime.fromisoformat(log_event.timestamp).timestamp()
+                except ValueError:
+                    correlation.related_logs.append(log_event)
+                    continue
+                if abs(log_ts - event.timestamp) <= self.time_window_sec:
+                    correlation.related_logs.append(log_event)
 
             if correlation.related_logs:
                 self.correlations.append(correlation)
 
         return self.correlations
+
+    def _match_patterns(
+        self,
+        lines: list[str],
+        source: str,
+        timestamp: str,
+    ) -> list[LogEvent]:
+        """Match log lines against compiled patterns; return matched LogEvents."""
+        events: list[LogEvent] = []
+        for line in lines:
+            for i, pattern in enumerate(self.compiled_patterns):
+                if pattern.search(line):
+                    events.append(
+                        LogEvent(
+                            timestamp=timestamp,
+                            level="ERROR",
+                            message=line.strip(),
+                            source=source,
+                            matched_pattern=self.error_patterns[i],
+                        )
+                    )
+                    break
+        return events
 
     def generate_report(self) -> dict[str, Any]:
         """Generate a human-readable error correlation report."""

@@ -92,9 +92,9 @@ class TestRunner:
 
         try:
             # Phase 3a: Navigate to the target page
+            start = time.time()
             step = TestStepResult(step="1", action="navigate")
             try:
-                start = time.time()
                 await page.goto(self.target_url, timeout=self.timeout_ms)
                 step.status = "passed"
                 step.duration_ms = int((time.time() - start) * 1000)
@@ -106,46 +106,22 @@ class TestRunner:
                 return result
             result.steps.append(step)
 
-            # Phase 3b: Auto-discover and fill form fields
-            step = TestStepResult(step="2", action="discover_and_fill")
-            try:
-                await self._fill_form(page, test_data)
-                step.status = "passed"
-            except PlaywrightError as e:
-                step.status = "failed"
-                step.details = str(e)
-            result.steps.append(step)
-
-            # Phase 3c: Submit the form
-            step = TestStepResult(step="3", action="submit")
-            try:
-                await self._submit_form(page)
-                step.status = "passed"
-            except PlaywrightError as e:
-                step.status = "failed"
-                step.details = str(e)
-            result.steps.append(step)
-
-            # Phase 3d: Verify outcome
-            step = TestStepResult(step="4", action="assert")
-            try:
-                await self._verify_page(page)
-                step.status = "passed"
-            except PlaywrightError as e:
-                step.status = "failed"
-                step.details = str(e)
-            result.steps.append(step)
-
-            # Phase 3e: Explore navigation — click all actionable elements
-            step = TestStepResult(step="5", action="explore_navigation")
-            try:
-                nav_results = await self._explore_navigation(page)
-                step.status = "passed"
-                step.details = f"Clicked {len(nav_results)} elements, visited {len(nav_results)} pages"
-            except PlaywrightError as e:
-                step.status = "failed"
-                step.details = str(e)
-            result.steps.append(step)
+            # Phase 3b–3e: fill → submit → assert → explore navigation
+            if not await self._run_step(
+                result, "2", "discover_and_fill", self._fill_form, page, test_data
+            ):
+                return result
+            if not await self._run_step(
+                result, "3", "submit", self._submit_form, page
+            ):
+                return result
+            if not await self._run_step(
+                result, "4", "assert", self._verify_page, page
+            ):
+                return result
+            await self._run_step(
+                result, "5", "explore_navigation", self._explore_navigation, page
+            )
 
             # Screenshot for artifacts
             ss_path = self.artifacts_dir / f"{form_name}_var{variation}.png"
@@ -171,11 +147,29 @@ class TestRunner:
 
         return result
 
+    async def _run_step(
+        self,
+        result: TestRunResult,
+        step: str,
+        action: str,
+        fn,
+        *args,
+    ) -> bool:
+        """Run one step, record it in result. Returns True when the step passed."""
+        s = TestStepResult(step=step, action=action)
+        try:
+            ret = await fn(*args)
+            s.status = "passed"
+            if ret is not None:
+                s.details = f"Clicked {len(ret)} elements, visited {len(ret)} pages"
+        except PlaywrightError as e:
+            s.status = "failed"
+            s.details = str(e)
+        result.steps.append(s)
+        return s.status == "passed"
+
     async def _fill_form(self, page: Page, test_data: dict[str, Any]):
         """Auto-discover form fields and fill them with test data."""
-        # Get all interactive elements
-        inputs = await page.query_selector_all("input, select, textarea")
-
         for field_name, field_value in test_data.items():
             # Try to find matching input by various strategies
             element = await self._find_field(page, field_name)
@@ -211,15 +205,9 @@ class TestRunner:
 
         for selector in selectors:
             try:
-                if selector.startswith("//"):
-                    # XPath
-                    element = await page.locator(selector).first
-                    if await element.count() > 0:
-                        return element
-                else:
-                    element = await page.locator(selector).first
-                    if await element.count() > 0:
-                        return element
+                element = await page.locator(selector).first
+                if await element.count() > 0:
+                    return element
             except PlaywrightError:
                 continue
 
@@ -331,23 +319,3 @@ class TestRunner:
                 continue
 
         return results
-
-    async def get_console_logs(self, page: Page) -> list[str]:
-        """Get console logs from the current page."""
-        logs = []
-        page.on("console", lambda msg: logs.append(msg.text))
-        return logs
-
-    async def get_network_requests(self, page: Page) -> list[dict]:
-        """Capture network request/response info."""
-        requests = []
-
-        def on_response(response):
-            requests.append({
-                "url": response.url,
-                "status": response.status,
-                "method": response.request.method,
-            })
-
-        page.on("response", on_response)
-        return requests

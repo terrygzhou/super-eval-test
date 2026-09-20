@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import subprocess
 from pathlib import Path
 
@@ -33,6 +34,14 @@ def resolve_source(source: str, output: str) -> str:
 # --- Commands ---
 
 
+def _llm_url_option(help: str) -> typer.models.OptionInfo:
+    return typer.Option(DEFAULT_LLM_BASE_URL, "--llm-url", help=help)
+
+
+def _llm_model_option(help: str) -> typer.models.OptionInfo:
+    return typer.Option(DEFAULT_LLM_MODEL, "--llm-model", help=help)
+
+
 @app.command()
 def run(
     *,
@@ -52,13 +61,11 @@ def run(
         None, "--config", "-c",
         help="Optional config.yaml (defaults to self-contained)",
     ),
-    llm_url: str = typer.Option(
-        DEFAULT_LLM_BASE_URL, "--llm-url",
-        help="LLM endpoint base URL (OpenAI-compatible)",
+    llm_url: str = _llm_url_option(
+        "LLM endpoint base URL (OpenAI-compatible)",
     ),
-    llm_model: str = typer.Option(
-        DEFAULT_LLM_MODEL, "--llm-model",
-        help="LLM model name",
+    llm_model: str = _llm_model_option(
+        "LLM model name",
     ),
     variations: int = typer.Option(
         3, "--variations", "-v",
@@ -81,10 +88,25 @@ def run(
         600, "--agent-timeout",
         help="Agent timeout in seconds (agent mode only, default 600)",
     ),
+    openhands_url: str = typer.Option(
+        "", "--openhands-url",
+        help="OpenHands Agent Server base URL (agent mode). "
+             "Default http://localhost:3005 (SuperApp's own compose container). "
+             "Point at an existing server, e.g. http://localhost:43006 for openhands-canvas.",
+    ),
+    openhands_auth: str = typer.Option(
+        "", "--openhands-auth",
+        help="Auth token for the OpenHands server (agent mode). Sent as "
+             "'Authorization: Bearer <token>'. For openhands-canvas use its API key.",
+    ),
+    use_existing_server: bool = typer.Option(
+        False, "--use-existing-server",
+        help="Reuse a running OpenHands server instead of docker-compose up "
+             "(agent mode). Auto-inferred from --openhands-url / OPENHANDS_* env.",
+    ),
 ) -> None:
     """Run the full testing pipeline against a webapp."""
     async def run_main():
-        import gc
         from src.pipeline import Pipeline
 
         if not source:
@@ -107,6 +129,9 @@ def run(
             mode=mode,
             agent_workspace=agent_workspace,
             agent_timeout=agent_timeout,
+            openhands_url=openhands_url,
+            openhands_auth=openhands_auth,
+            use_existing_server=use_existing_server,
         )
 
         if dry_run:
@@ -182,11 +207,11 @@ def generate(
         "./superApp_output", "--output", "-o",
         help="Output directory for test data",
     ),
-    llm_url: str = typer.Option(
-        DEFAULT_LLM_BASE_URL, "--llm-url",
+    llm_url: str = _llm_url_option(
+        "LLM endpoint base URL (OpenAI-compatible)",
     ),
-    llm_model: str = typer.Option(
-        DEFAULT_LLM_MODEL, "--llm-model",
+    llm_model: str = _llm_model_option(
+        "LLM model name",
     ),
     variations: int = typer.Option(
         3, "--variations", "-v",
@@ -224,6 +249,100 @@ def generate(
         console.print(f"Generated {len(dataset.records)} test records → {out_path}")
 
     asyncio.run(main())
+
+
+# --- Evaluation gate (superApp gate) ---
+
+
+@app.command()
+def gate(
+    *,
+    target: str = typer.Option(
+        "", "--target", "-t",
+        help="URL of the target webapp to gate against",
+    ),
+    source: str = typer.Option(
+        "", "--source", "-s",
+        help="Local path or git URL of the webapp source (optional; gate uses the "
+             "task suite, not the analyzer)",
+    ),
+    suite: str = typer.Option(
+        "tasks", "--suite",
+        help="Directory of task YAML files (default ./tasks)",
+    ),
+    n: int = typer.Option(
+        7, "--n",
+        help="Trials per task (enforced 5-10; default 7)",
+    ),
+    baseline: Path = typer.Option(
+        None, "--baseline",
+        help="Path to a prior gate_report.json to compare against; "
+             "omit to establish a baseline",
+    ),
+    fail_on_regression: bool = typer.Option(
+        True, "--fail-on-regression/--no-fail-on-regression",
+        help="Exit 1 when a significant regression vs baseline is detected "
+             "(default true)",
+    ),
+    cost_gate: bool = typer.Option(
+        False, "--cost-gate",
+        help="Treat a cost-limit breach as a gate failure",
+    ),
+    output: str = typer.Option(
+        "./superApp_output", "--output", "-o",
+        help="Output/report directory for all artifacts",
+    ),
+    config: Path = typer.Option(
+        None, "--config", "-c",
+        help="Optional config.yaml (defaults to self-contained)",
+    ),
+    llm_url: str = _llm_url_option(
+        "LLM endpoint base URL (used by an optional LLM judge)",
+    ),
+    llm_model: str = _llm_model_option(
+        "LLM model name",
+    ),
+) -> None:
+    """Run the evaluation gate: deterministic task-suite trials + regression gating."""
+
+    async def gate_main():
+        from src.pipeline import Pipeline
+
+        source_path = resolve_source(source, output) if source else ""
+
+        p = Pipeline(
+            config_path=str(config) if config else None,
+            output_dir=output,
+            target_url=target or "",
+            source_root=source_path,
+            llm_url=llm_url,
+            llm_model=llm_model,
+        )
+
+        try:
+            verdict = await p.run_gate(
+                suite_dir=suite,
+                n_trials=n,
+                baseline_path=str(baseline) if baseline else None,
+                target_override=target,
+                cost_gate=cost_gate,
+                fail_on_regression=fail_on_regression,
+            )
+        except Exception as exc:
+            console.print(f"[red]Gate infra error: {exc}[/red]")
+            raise SystemExit(2)
+
+        exit_code = int(verdict.get("exit_code", 0))
+        console.print(
+            f"[bold]Gate: {verdict.get('verdict')}[/bold] "
+            f"→ {output}/gate_report.json"
+        )
+        gc.collect()
+        if exit_code:
+            raise SystemExit(exit_code)
+
+    asyncio.run(gate_main())
+    gc.collect()
 
 
 # --- OpenHands container management ---

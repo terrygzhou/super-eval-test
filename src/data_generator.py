@@ -162,27 +162,34 @@ class DataGenerator:
 
         return vals[variation - 1] if variation <= len(vals) else vals[0]
 
+    @staticmethod
+    def _extract_json_blob(text: str) -> str | None:
+        """Extract a candidate JSON blob from an LLM response.
+
+        Tries, in order: raw text, ```json fenced block, ``` fenced block,
+        slice from first '{' to last '}'. Returns None if no candidate
+        can be produced. The caller is responsible for parsing.
+        """
+        blob = text.strip()
+        if "```json" in blob:
+            blob = blob.split("```json", 1)[1].split("```", 1)[0].strip()
+        elif "```" in blob:
+            blob = blob.split("```", 1)[1].split("```", 1)[0].strip()
+        start = blob.find("{")
+        end = blob.rfind("}") + 1
+        if start >= 0 and end > start:
+            return blob[start:end]
+        return None
+
     def _parse_response(self, response_text: str) -> list[TestRecord]:
         """Parse LLM JSON response into TestRecord objects."""
-        # Try to extract JSON from response
-        json_str = response_text.strip()
-
-        # Handle markdown code blocks
-        if "```json" in json_str:
-            json_str = json_str.split("```json")[1].split("```")[0].strip()
-        elif "```" in json_str:
-            json_str = json_str.split("```")[1].split("```")[0].strip()
-
+        blob = self._extract_json_blob(response_text)
+        if blob is None:
+            return []
         try:
-            data = json.loads(json_str)
+            data = json.loads(blob)
         except json.JSONDecodeError:
-            # Try to find JSON-like structure
-            start = json_str.find("{")
-            end = json_str.rfind("}") + 1
-            if start >= 0 and end > start:
-                data = json.loads(json_str[start:end])
-            else:
-                return []
+            return []
 
         records: list[TestRecord] = []
         for record in data.get("records", []):

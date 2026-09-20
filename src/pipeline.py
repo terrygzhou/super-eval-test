@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 import shutil
@@ -20,10 +19,11 @@ from .constants import (
     DEFAULT_OPENHANDS_LLM_MODEL,
 )
 
-from src.source_analyzer import SourceAnalyzer, FormSchema
+from src.source_analyzer import SourceAnalyzer
 from src.data_generator import DataGenerator, TestDataset
 from src.test_runner import TestRunner, TestRunResult
 from src.log_monitor import LogMonitor, TestEvent
+from src.prompts import analyze_goal, report_goal, test_goal
 
 console = Console()
 
@@ -43,6 +43,9 @@ class Pipeline:
         mode: str = "scripted",
         agent_workspace: str = "",
         agent_timeout: int = 600,
+        openhands_url: str = "",
+        openhands_auth: str = "",
+        use_existing_server: bool = False,
     ):
         self.config = self._load_config(config_path)
         self.output_dir = Path(output_dir).resolve()
@@ -65,6 +68,27 @@ class Pipeline:
         self.mode = mode
         self.agent_workspace = agent_workspace
         self.agent_timeout = agent_timeout
+
+        # OpenHands endpoint / auth / reuse. Explicit kwargs win, then config
+        # (openhands: block), then env, then the built-in :3005 compose default.
+        oh_cfg = self.config.get("openhands", {})
+        self.openhands_url = (
+            openhands_url
+            or oh_cfg.get("url")
+            or os.environ.get("OPENHANDS_URL", "http://localhost:3005")
+        )
+        self.openhands_auth = (
+            openhands_auth
+            or oh_cfg.get("auth_token", "")
+            or os.environ.get("OPENHANDS_AUTH_TOKEN", "")
+        )
+        # Reuse a running server (e.g. openhands-canvas:43006) when requested
+        # explicitly, OR when a non-default URL is configured.
+        self.use_existing_server = bool(
+            use_existing_server
+            or oh_cfg.get("use_existing_server", False)
+            or os.environ.get("OPENHANDS_USE_EXISTING", "0") == "1"
+        )
 
         # Intermediate data
         self.schemas: list[dict] = []
@@ -89,9 +113,14 @@ class Pipeline:
         """
         from src.openhands_client import OpenHandsClient, OpenHandsError
 
-        # Copy source into the workspace dir that's mounted into the container
-        # compose.yaml mounts ./workspace → /opt/workspace_base
-        host_workspace = Path(__file__).parent.parent / "workspace" / "source"
+        # Copy source into the host workspace dir that compose.yaml mounts
+        # into the container as /opt/workspace_base. An explicit
+        # --agent-workspace overrides the default ./workspace/source.
+        host_workspace = (
+            Path(self.agent_workspace).resolve()
+            if self.agent_workspace
+            else Path(__file__).parent.parent / "workspace" / "source"
+        )
         host_workspace.parent.mkdir(parents=True, exist_ok=True)
         if host_workspace.exists():
             shutil.rmtree(str(host_workspace))
@@ -113,14 +142,22 @@ class Pipeline:
 
         compose_path = str(Path(__file__).parent.parent / "compose.yaml")
         client = OpenHandsClient(
-            base_url="http://localhost:3005",
+            base_url=self.openhands_url,
             compose_file=compose_path,
             timeout=self.agent_timeout,
             model=DEFAULT_OPENHANDS_LLM_MODEL,
             base_llm_url=DEFAULT_LLM_BASE_URL,
+            auth_header=self.openhands_auth or None,
+            use_existing_server=self.use_existing_server,
         )
 
-        console.print("[bold blue]Agent mode: Starting OpenHands container...[/bold blue]")
+        banner = (
+            "[bold blue]Agent mode: Reusing existing OpenHands server "
+            f"({self.openhands_url})...[/bold blue]"
+            if self.use_existing_server
+            else "[bold blue]Agent mode: Starting OpenHands container...[/bold blue]"
+        )
+        console.print(banner)
         try:
             client.start_server()
         except Exception as e:
@@ -130,25 +167,8 @@ class Pipeline:
         try:
             # ── Conversation 1: Analyze ──────────────────────────────
             console.print("[bold blue]Conversation 1: Analyze source...[/bold blue]")
-            analyze_goal = (
-                f"You are a QA automation engineer. Your working directory is "
-                f"{container_source}. Your output directory is {artifacts_dir}.\n\n"
-                "CRITICAL: Only scan the `src/` subdirectory for frontend components. "
-                "Ignore node_modules, dist, .venv, and any non-source directories.\n\n"
-                "Use your tools (bash, write_file) to complete these steps:\n"
-                "1. List ONLY frontend files: `find src/ -name '*.tsx' -o -name '*.ts' | sort`\n"
-                "   If no src/ exists, try: `ls -la` then `find . -maxdepth 3 -name '*.tsx' -o -name '*.ts' | head -50`\n"
-                "2. Read 5-10 key component files that contain forms, inputs, or API calls.\n"
-                "   Focus on files matching: *Form*, *Dialog*, *Input*, *Chat*, *Settings*, *Search*, *Create*, *Upload*\n"
-                f"3. Write a JSON file at {artifacts_dir}/analysis.json containing:\n"
-                "   - forms: list of {{'name': ..., 'fields': [{{'field_name': ..., 'type': ..., 'required': ...}}], 'endpoint': ..., 'source_file': ...}}\n"
-                "   - endpoints: list of API routes and expected methods\n"
-                f"4. Generate 3 realistic test data variations per form, save to {artifacts_dir}/test_data.json\n\n"
-                "TIME LIMIT: Complete within 8 minutes. If stuck on large repos, focus on 5-8 form components max.\n"
-                "Use write_file or bash (echo/cat heredoc) to create the JSON files. "
-                "Make sure each file is valid JSON before finishing."
-            )
-            conv1_id = client.create_conversation(analyze_goal, container_source)
+            goal1 = analyze_goal(container_source, artifacts_dir)
+            conv1_id = client.create_conversation(goal1, container_source)
             console.print(f"  Conversation ID: {conv1_id}")
 
             event_count = [0]
@@ -168,66 +188,8 @@ class Pipeline:
 
             # ── Conversation 2: Test ─────────────────────────────────
             console.print("[bold blue]Conversation 2: Run tests...[/bold blue]")
-            test_goal = (
-                f"You are a QA automation engineer. Your working directory is "
-                f"{container_source}. Your output directory is {artifacts_dir}.\n\n"
-                f"Run tests against {target_url}. Generate comprehensive, traceable test results.\n\n"
-                "## Steps\n"
-                "1. Read analysis from " + artifacts_dir + "/analysis.json to identify forms, endpoints, and source file mappings.\n"
-                "2. Read test data from " + artifacts_dir + "/test_data.json.\n"
-                "3. For each test case, perform the following:\n"
-                "   a. Navigate to the target page URL.\n"
-                "   b. Generate a unique session_id (UUIDv4) for this test run.\n"
-                "   c. Fill form fields or make API requests with the test data.\n"
-                "   d. Capture the HTTP response (status code, headers, body).\n"
-                "   e. Capture frontend console logs (via Playwright page.on('console') or curl --verbose).\n"
-                "   f. If the target app exposes a logs endpoint (e.g. /api/logs, /logs), fetch and capture server-side log output for this request.\n"
-                "   g. Identify the source code file that implements the tested form/endpoint (from analysis.json).\n"
-                "4. Save results to " + artifacts_dir + "/test_results.json.\n\n"
-                "## Output Schema — test_results.json\n"
-                "Each test entry must contain ALL of these fields:\n"
-                '{\n'
-                "  \"tests\": [\n"
-                "    {\n"
-                "      \"test_name\": \"string (e.g. CreateProjectForm/Standard English Project)\",\n"
-                '      \"status\": "passed" | "failed" | "error" | "skipped",\n'
-                "      \"duration_ms\": number,\n"
-                "      \"session_id\": \"UUIDv4 string\",\n"
-                "      \"page_url\": \"full URL navigated to (e.g. http://host.docker.internal:19829/project/create)\",\n"
-                '      \"test_data\": { field_name: value, ... },\n'
-                '      \"action_performed\": "HTTP method + path or browser action description (e.g. POST /api/projects, filled and submitted CreateProjectForm)\",\n'
-                '      \"source_file\": "relative path to source file that implements this form/endpoint (e.g. src/forms/create_project.tsx or backend/api/projects.py)",\n'
-                '      \"http_response\": {\n'
-                '        "status_code": number | null,\n'
-                '        "headers": { key: value, ... } | null,\n'
-                '        "body_preview": "first 500 chars of response body or null"\n'
-                "      },\n"
-                '      \"frontend_logs\": [\n'
-                '        { "level": "log|warn|error", "message": "string" }\n'
-                "      ],\n"
-                '      \"server_logs\": [\n'
-                '        { "timestamp": "ISO string", "level": "INFO|WARN|ERROR", "message": "string" }\n'
-                "      ],\n"
-                '      \"error\": {\n'
-                '        "error_code": "string (HTTP status, exception type, or null if passed)",\n'
-                '        "exception_description": "stack trace or error message, or null",\n'
-                '        "frontend_error": "console.error output or UI error text, or null",\n'
-                '        "server_error": "server-side error from logs or response, or null"\n'
-                "      },\n"
-                '      \"screenshot": "relative path to screenshot on failure, or null"\n'
-                "    }\n"
-                "  ],\n"
-                "  \"summary\": { \"total\": number, \"passed\": number, \"failed\": number, \"skipped\": number }\n"
-                "}\n\n"
-                "IMPORTANT:\n"
-                "- Every test entry MUST include session_id, page_url, test_data, action_performed, source_file, http_response, frontend_logs, server_logs, and error fields.\n"
-                "- For passed tests, set error fields to null.\n"
-                "- For failed tests, populate ALL error sub-fields with actual captured data.\n"
-                "- Make the test_data object contain the exact values submitted (redact secrets if any).\n"
-                "- Use bash/curl or write a Python test script to execute tests. Do NOT use Playwright if unavailable — curl/fetch is acceptable.\n"
-                "- Verify the JSON is valid before saving."
-            )
-            conv2_id = client.create_conversation(test_goal, container_source)
+            goal2 = test_goal(container_source, artifacts_dir, target_url)
+            conv2_id = client.create_conversation(goal2, container_source)
             console.print(f"  Conversation ID: {conv2_id}")
 
             event_count[0] = 0
@@ -237,145 +199,8 @@ class Pipeline:
 
             # ── Conversation 3: Report ────────────────────────────────
             console.print("[bold blue]Conversation 3: Generate report...[/bold blue]")
-            report_goal = (
-                f"You are a QA automation engineer. Your working directory is "
-                f"{container_source}. Your output directory is {artifacts_dir}.\n\n"
-                "Generate a comprehensive, traceable test report.\n\n"
-                "## Steps\n"
-                "1. Read " + artifacts_dir + "/analysis.json for form/endpoint/source mapping.\n"
-                "2. Read " + artifacts_dir + "/test_results.json for per-test results.\n"
-                "3. Read " + artifacts_dir + "/test_data.json for test input data.\n"
-                "4. Cross-reference all data sources and compile a full report.\n"
-                "5. Save to " + artifacts_dir + "/report.json.\n\n"
-                "## Output Schema — report.json\n"
-                '{\n'
-                '  "report_metadata": {\n'
-                '    "generated_at": "ISO 8601 timestamp",\n'
-                '    "target_url": "string",\n'
-                '    "source_root": "path to analyzed source",\n'
-                '    "pipeline_mode": "agent"\n'
-                "  },\n"
-                '  "summary": {\n'
-                '    "forms_analyzed": number,\n'
-                '    "test_records": number,\n'
-                '    "tests_passed": number,\n'
-                '    "tests_failed": number,\n'
-                '    "tests_skipped": number,\n'
-                '    "pass_rate": percentage (0-100),\n'
-                '    "total_duration_ms": number,\n'
-                '    "avg_duration_ms": number\n'
-                "  },\n"
-                '  "test_details": [\n'
-                "    {\n"
-                '      "test_name": "string",\n'
-                '      "status": "passed" | "failed" | "error" | "skipped",\n'
-                '      "duration_ms": number,\n'
-                '      "session_id": "UUIDv4",\n'
-                '      "page_url": "full URL",\n'
-                '      "test_data": { field: value, ... },\n'
-                '      "action_performed": "string",\n'
-                '      "source_file": "relative path",\n'
-                '      "http_response": {\n'
-                '        "status_code": number | null,\n'
-                '        "headers": { ... } | null,\n'
-                '        "body_preview": "string | null"\n'
-                "      },\n"
-                '      "frontend_logs": [{ "level": "string", "message": "string" }],\n'
-                '      "server_logs": [{ "timestamp": "string", "level": "string", "message": "string" }],\n'
-                '      "error": {\n'
-                '        "error_code": "string | null",\n'
-                '        "exception_description": "string | null",\n'
-                '        "frontend_error": "string | null",\n'
-                '        "server_error": "string | null"\n'
-                "      },\n"
-                '      "screenshot": "path | null"\n'
-                "    }\n"
-                "  ],\n"
-                '  "failures": [\n'
-                "    {\n"
-                '      "test_name": "string",\n'
-                '      "error_code": "string",\n'
-                '      "exception_description": "string",\n'
-                '      "frontend_error": "string | null",\n'
-                '      "server_error": "string | null",\n'
-                '      "session_id": "UUIDv4",\n'
-                '      "source_file": "string"\n'
-                "    }\n"
-                "  ],\n"
-                '  "source_coverage": {\n'
-                '    "files_tested": ["list of unique source files tested"],\n'
-                '    "endpoints_tested": ["list of unique API endpoints tested"],\n'
-                '    "forms_tested": ["list of unique form names tested"]\n'
-                "  },\n"
-                '  "narrative_summary": "string — concise summary of findings, key regressions, and recommendations"\n'
-                "}\n\n"
-                "## Requirements\n"
-                "- ALL test entries from test_results.json must appear in test_details.\n"
-                "- Cross-reference analysis.json to fill in source_file mappings where test_results.json is incomplete.\n"
-                "- failures array lists only tests with status 'failed' or 'error'.\n"
-                "- source_coverage aggregates unique values from all test entries.\n"
-                "- narrative_summary must be 150-500 words, focusing on pass rate, failure patterns, and actionable recommendations.\n"
-                "- Verify the JSON is valid before saving.\n\n"
-                "## Generate Markdown Report\n"
-                f"Then write a human-readable Markdown report to {artifacts_dir}/report.md.\n\n"
-                "The Markdown must be easily parsable by coding agents for backlog generation AND readable by humans for action prioritization.\n\n"
-                "## Markdown Structure\n\n"
-                "```markdown\n"
-                "# Test Report — <target_url>\n\n"
-                "## Executive Summary\n\n"
-                "| Metric | Value |\n"
-                "| --- | --- |\n"
-                "| Tests | <total> |\n"
-                "| Passed | <passed> |\n"
-                "| Failed | <failed> |\n"
-                "| Pass Rate | <rate>% |\n"
-                "| Duration | <duration_ms>ms |\n\n"
-                "## Failure Triage (by root cause)\n\n"
-                "Group all failures by error_code or root cause. For each group:\n\n"
-                "### <Error Code> — <Exception Summary> (<count> failures)\n\n"
-                "- **Severity:** CRITICAL | HIGH | MEDIUM | LOW\n"
-                "- **Root Cause:** <one-sentence diagnosis>\n"
-                "- **Affected Forms:** <list of test names>\n"
-                "- **Source Files:** <list of source files>\n"
-                "- **Action Required:** <specific remediation step>\n\n"
-                "### <next group> ... (repeat for each error group)\n\n"
-                "## Blocking Issues\n\n"
-                "List issues that prevent other tests from passing:\n\n"
-                "- **<Issue>** — <Why it blocks other tests, what must be fixed first>\n\n"
-                "## Detailed Failures\n\n"
-                "Each failure is a standalone task for agent-driven remediation.\n\n"
-                "### <test_name>\n\n"
-                "- **Session:** <session_id>\n"
-                "- **Source:** <source_file>\n"
-                "- **Error Code:** <error_code>\n"
-                "- **Exception:** <exception_description>\n"
-                "- **Frontend Error:** <frontend_error>\n"
-                "- **Server Error:** <server_error>\n"
-                "- **Action Performed:** <action_performed>\n\n"
-                "### <next_failure> ... (repeat for each failure)\n\n"
-                "## Test Details\n\n"
-                "| Test | Status | Duration | Source File | Error Code |\n"
-                "| --- | --- | --- | --- | --- |\n"
-                "| <test_name> | <status> | <duration_ms>ms | <source_file> | <error_code or - > |\n\n"
-                "## Source Coverage\n\n"
-                "| Category | Count | Details |\n"
-                "| --- | --- | --- |\n"
-                "| Files Tested | <count> | <comma-separated list> |\n"
-                "| Endpoints Tested | <count> | <comma-separated list> |\n"
-                "| Forms Tested | <count> | <comma-separated list> |\n\n"
-                "## Coverage Gaps\n\n"
-                "- **Untested Forms:** <list of forms from analysis.json that had no tests>\n"
-                "- **Untested Endpoints:** <list of endpoints from analysis.json that had no tests>\n"
-                "- **Risk Assessment:** <what's the risk of not testing these>\n\n"
-                "## Recommendations\n\n"
-                "1. <Highest priority action — usually the blocking issue or most impactful fix>\n"
-                "2. <Second priority>\n"
-                "3. <Third priority>\n\n"
-                "## Narrative Summary\n\n"
-                "<narrative_summary from report.json — 150-500 words>\n"
-                "```"
-            )
-            conv3_id = client.create_conversation(report_goal, container_source)
+            goal3 = report_goal(container_source, artifacts_dir)
+            conv3_id = client.create_conversation(goal3, container_source)
             console.print(f"  Conversation ID: {conv3_id}")
 
             event_count[0] = 0
@@ -628,3 +453,219 @@ class Pipeline:
         console.print(f"  Report saved: {report_path}")
 
         return report
+
+    async def run_gate(
+        self,
+        *,
+        suite_dir: str,
+        n_trials: int = 7,
+        baseline_path: str | None = None,
+        target_override: str = "",
+        cost_gate: bool = False,
+        fail_on_regression: bool = True,
+    ) -> dict:
+        """Run the evaluation gate: deterministic task-suite trials + regression gating."""
+        return await _run_gate_impl(
+            self,
+            suite_dir,
+            n_trials,
+            baseline_path,
+            target_override,
+            cost_gate,
+            fail_on_regression,
+        )
+
+# Exit codes per the gate contract: 0 pass/established, 1 regression, 2 infra
+EXIT_PASS = 0
+EXIT_REGRESSION = 1
+EXIT_INFRA = 2
+
+
+def _junit_xml(report: dict, n_trials: int) -> str:
+    """Render a JUnit-XML gate report: one <testsuite> per task, one
+    <testcase> per trial. Stdlib xml only."""
+    import xml.etree.ElementTree as ET
+
+    suites = ET.Element("testsuites", {"name": "superApp-gate"})
+    for name, entry in report["tasks"].items():
+        fails = 0
+        trials = entry.get("trials", [])
+        tsuite = ET.SubElement(
+            suites, "testsuite", name=name, tests=str(n_trials), failures="0",
+        )
+        for i in range(n_trials):
+            trial = trials[i] if i < len(trials) else {}
+            tc = ET.SubElement(tsuite, "testcase", name=f"trial-{i + 1}")
+            if not trial.get("passed", False):
+                fails += 1
+                ET.SubElement(tc, "failure", message="trial failed")
+        tsuite.set("failures", str(fails))
+    ET.indent(suites, space="  ")
+    return ET.tostring(suites, encoding="unicode", xml_declaration=False)
+
+
+def _gate_report_md(report: dict) -> str:
+    """Human-readable gate report: task, rate, CI, verdict, cost."""
+    lines = ["# SuperApp Gate Report", ""]
+    lines.append(f"**Verdict:** {report['verdict']}   ")
+    lines.append(f"**Trials per task:** {report.get('n_trials', '?')}   ")
+    lines.append("")
+    lines.append("| Task | Rate | 95% CI | Verdict | Cost (USD) |")
+    lines.append("|---|---|---|---|---|")
+    for name, entry in report["tasks"].items():
+        lo, hi = entry["ci"]
+        cost = entry.get("cost", {}).get("estimated_cost_usd", 0.0)
+        verdict = entry.get("baseline_verdict", "—")
+        lines.append(
+            f"| {name} | {entry['success_rate']:.3f} | [{lo:.3f}, {hi:.3f}] "
+            f"| {verdict} | {cost:.4f} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+async def _run_gate_impl(
+    self: "Pipeline",
+    suite_dir: str,
+    n_trials: int,
+    baseline_path: str | None,
+    target_override: str,
+    cost_gate: bool,
+    fail_on_regression: bool,
+) -> dict:
+    """Core gate orchestration. Kept as a free function so `Pipeline.run_gate`
+    is a thin, discoverable method."""
+    from src import stat_gate
+    from src.cost_tracker import CostTracker
+    from src.graders import resolve_graders
+    from src.task_suite import load_suite
+
+    if not (5 <= n_trials <= 10):
+        raise ValueError(f"--n must be between 5 and 10 (got {n_trials})")
+
+    tasks = load_suite(suite_dir)
+    judge_cfg = self.config.get("judge", {})
+    rate_table = self.config.get("cost", {}).get("rate_table")
+    tracker = CostTracker(rate_table=rate_table)
+
+    target_url = target_override or self.config.get("target", {}).get(
+        "url", "http://localhost:8081"
+    )
+    browser_cfg = self.config.get("browser", {})
+    runner = TestRunner(
+        target_url=target_url,
+        headless=browser_cfg.get("headless", True),
+        timeout_ms=browser_cfg.get("timeout_ms", 30000),
+        viewport=browser_cfg.get("viewport", {"width": 1280, "height": 720}),
+        storage_state=browser_cfg.get("storage_state"),
+        artifacts_dir=str(self.artifacts_dir),
+    )
+    await runner.start()
+
+    task_entries: dict[str, dict] = {}
+    try:
+        for task in tasks:
+            trial_passed = 0
+            trial_details: list[dict] = []
+            total_latency = 0.0
+            for trial in range(n_trials):
+                t0 = time.time()
+                result = await runner.run_form_tests(task.form, task.data, trial + 1)
+                total_latency += time.time() - t0
+
+                graders = resolve_graders(task.graders, judge_cfg=judge_cfg)
+                grade = graders[0].grade(result)
+                for g in graders[1:]:
+                    grade = g.grade(result)
+                trial_passed += int(grade.passed)
+                trial_details.append({
+                    "trial": trial + 1,
+                    "passed": bool(grade.passed),
+                    "score": grade.score,
+                    "detail": grade.detail,
+                    "graders": [g.grader_type for g in graders],
+                })
+
+            used_judge = any(g == "llm-judge" for d in trial_details for g in d["graders"])
+            tokens_in = tokens_out = llm_calls = 0
+            if used_judge:
+                llm_calls = n_trials
+                tokens_in = n_trials * 400
+                tokens_out = n_trials * 80
+            tool_calls = n_trials  # one runner step-count per trial
+            cost = tracker.record_trial(
+                task=task.name, n_trials=n_trials,
+                tokens_in=tokens_in, tokens_out=tokens_out,
+                llm_calls=llm_calls, latency_s=total_latency, tool_calls=tool_calls,
+            )
+
+            success_rate = stat_gate.trial_success_rate(trial_passed, n_trials)
+            ci = stat_gate.wilson_ci(success_rate, n_trials)
+            task_entries[task.name] = {
+                "form": task.form,
+                "success_rate": success_rate,
+                "n_trials": n_trials,
+                "n_passed": trial_passed,
+                "ci": list(ci),
+                "trials": trial_details,
+                "cost": cost,
+            }
+    finally:
+        await runner.close()
+
+    baseline = stat_gate.load_baseline(baseline_path) if baseline_path else None
+    baseline_tasks = baseline["tasks"] if baseline else None
+    comparison = stat_gate.compare_to_baseline(task_entries, baseline_tasks)
+
+    verdict = "PASS"
+    if comparison["established"]:
+        verdict = "ESTABLISHED"
+    elif comparison["overall"] == "FAIL":
+        verdict = "FAIL"
+    for name, entry in comparison.get("tasks", {}).items():
+        if name in task_entries:
+            task_entries[name]["baseline_verdict"] = entry["verdict"]
+
+    cost_breach = False
+    if cost_gate:
+        for task in tasks:
+            limits = task.cost_limits or {}
+            cost = task_entries[task.name]["cost"]
+            if limits.get("max_tokens_out") and cost["tokens_out"] > limits["max_tokens_out"]:
+                cost_breach = True
+            if limits.get("max_latency_s") and cost["latency_s"] > limits["max_latency_s"]:
+                cost_breach = True
+
+    report = {
+        "verdict": verdict,
+        "n_trials": n_trials,
+        "tasks": task_entries,
+        "baseline_path": baseline_path,
+        "cost_totals": tracker.run_totals(),
+        "cost_breach": cost_breach,
+    }
+    report_path = self.output_dir / "gate_report.json"
+    Path(report_path).parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
+    (self.output_dir / "gate_report.md").write_text(_gate_report_md(report), encoding="utf-8")
+    (self.output_dir / "gate_report.xml").write_text(_junit_xml(report, n_trials), encoding="utf-8")
+    (self.output_dir / "cost.json").write_text(
+        json.dumps(tracker.to_cost_json(), indent=2, default=str), encoding="utf-8"
+    )
+    if comparison["established"] and baseline_path:
+        stat_gate.save_baseline(report, baseline_path)
+
+    if cost_breach and cost_gate:
+        exit_code = EXIT_REGRESSION
+    elif verdict == "FAIL" and fail_on_regression:
+        exit_code = EXIT_REGRESSION
+    else:
+        exit_code = EXIT_PASS
+
+    console.print(f"\n[bold]Gate verdict: {verdict}[/bold] (exit {exit_code})")
+    return {
+        "verdict": verdict,
+        "exit_code": exit_code,
+        "report_path": str(report_path),
+        "cost_breach": cost_breach,
+    }
