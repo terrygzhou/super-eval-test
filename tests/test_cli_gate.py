@@ -25,10 +25,19 @@ def test_gate_help_lists_all_flags():
         assert flag in out, f"missing flag {flag} in gate --help:\n{out}"
 
 
-def test_gate_requires_suite():
-    # No suite → infra error (exit 2), not a crash.
-    result = runner.invoke(app, ["gate", "--target", "http://x"])
-    assert result.exit_code == 2
+def test_gate_requires_suite(tmp_path, monkeypatch):
+    # No suite dir → infra error (exit 2), not a crash.
+    # Point at a temp dir (empty) so we don't accidentally pick up the repo's tasks/.
+    suite = tmp_path / "missing_suite"
+    result = runner.invoke(
+        app,
+        [
+            "gate", "--target", "http://x",
+            "--suite", str(suite),
+            "--output", str(tmp_path / "out"),
+        ],
+    )
+    assert result.exit_code == 2, result.output
 
 
 def test_gate_existing_commands_unchanged():

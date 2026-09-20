@@ -307,6 +307,14 @@ def gate(
 
     async def gate_main():
         from src.pipeline import Pipeline
+        from src.task_suite import load_suite, TaskSuiteError
+
+        # Fail fast on a missing/empty suite dir (infra error, exit 2).
+        try:
+            load_suite(suite)
+        except TaskSuiteError as exc:
+            console.print(f"[red]Suite error: {exc}[/red]")
+            raise SystemExit(2)
 
         source_path = resolve_source(source, output) if source else ""
 
